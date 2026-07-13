@@ -1,0 +1,123 @@
+<svg width="100%" viewBox="0 0 680 560" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>Hộp đèn nền — mặt cắt chi tiết (vách đỡ giữa ống, ốc M3 ngang, module LED xỏ lỗ giữa)</title>
+  <desc>Mặt cắt: ống thẳng suốt; vách đỡ giữa ống bắt ốc M3 xuyên thành; module LED xỏ qua lỗ giữa vách, đầu LED hướng lên; nửa pin nằm dưới vách; thân dưới bọc kín pin và làm chân đế.</desc>
+  <style>
+    text{font-family:'Segoe UI',system-ui,sans-serif}
+    .th{font-weight:600;font-size:15px;fill:var(--text-primary)}
+    .t{font-weight:400;font-size:14px;fill:var(--text-primary)}
+    .ts{font-weight:400;font-size:12px;fill:var(--text-secondary)}
+    :root{--text-primary:#1a1a1a;--text-secondary:#4a4a4a;--text-muted:#8a8a8a;--border-strong:#9a9a9a}
+    .c-gray{--p:#e3e3e3;--b:#f5f5f5;--s:#9a9a9a;--t:#333}
+    .c-blue{--p:#bcd6f5;--b:#e8f1fc;--s:#5b8fd6;--t:#1a3a63}
+    .c-teal{--p:#bfe6df;--b:#e7f6f2;--s:#3fae9c;--t:#134b43}
+    .c-amber{--p:#f6e0a8;--b:#fdf3d6;--s:#d6a53a;--t:#5c440f}
+    @media (prefers-color-scheme:dark){
+      :root{--text-primary:#ececec;--text-secondary:#b6b6b6;--text-muted:#8a8a8a;--border-strong:#7a7a7a}
+      .c-gray{--p:#3a3a3a;--b:#2a2a2a;--s:#7a7a7a;--t:#e0e0e0}
+      .c-blue{--p:#28405f;--b:#1c2c40;--s:#5b8fd6;--t:#cfe0f6}
+      .c-teal{--p:#1f4a43;--b:#173832;--s:#3fae9c;--t:#bfe6df}
+      .c-amber{--p:#5c4a1e;--b:#3d3010;--s:#d6a53a;--t:#f6e0a8}
+    }
+  </style>
+  <defs>
+    <pattern id="hatch2" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+      <line x1="0" y1="0" x2="0" y2="7" stroke="var(--border-strong)" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <text class="th" x="228" y="28" text-anchor="middle">Hộp đèn nền — vách đỡ giữa ống, ốc M3 ngang</text>
+
+  <g class="c-gray">
+    <line x1="228" y1="54" x2="228" y2="40" stroke="var(--s)" stroke-width="2"/>
+    <path d="M228 38 l-5 8 h10 z" fill="var(--s)"/>
+  </g>
+  <text class="ts" x="242" y="48">↑ Lên camera / ống ảnh (phần trên OK)</text>
+
+  <g class="c-gray">
+    <rect x="144" y="58" width="12" height="392" fill="var(--b)" stroke="var(--s)" stroke-width="1.5"/>
+    <rect x="144" y="58" width="12" height="392" fill="url(#hatch2)"/>
+    <rect x="300" y="58" width="12" height="392" fill="var(--b)" stroke="var(--s)" stroke-width="1.5"/>
+    <rect x="300" y="58" width="12" height="392" fill="url(#hatch2)"/>
+    <rect x="156" y="60" width="8" height="8" fill="var(--b)" stroke="var(--s)" stroke-width="1"/>
+    <rect x="292" y="60" width="8" height="8" fill="var(--b)" stroke="var(--s)" stroke-width="1"/>
+    <rect x="156" y="100" width="7" height="32" fill="var(--b)" stroke="var(--s)" stroke-width="1"/>
+    <rect x="293" y="100" width="7" height="32" fill="var(--b)" stroke="var(--s)" stroke-width="1"/>
+  </g>
+
+  <g class="c-blue">
+    <rect x="160" y="60" width="132" height="6" fill="var(--b)" stroke="var(--s)" stroke-width="1.2"/>
+  </g>
+  <g class="c-blue"><rect x="160" y="68" width="132" height="26" fill="var(--b)"/></g>
+  <circle cx="194" cy="82" r="3.5" fill="var(--text-primary)"/>
+  <circle cx="230" cy="78" r="2.5" fill="var(--text-primary)"/>
+  <circle cx="260" cy="86" r="4" fill="var(--text-primary)"/>
+
+  <g class="c-gray">
+    <rect x="163" y="102" width="130" height="6" fill="var(--p)"/>
+    <rect x="163" y="109" width="130" height="6" fill="var(--b)"/>
+    <rect x="163" y="116" width="130" height="6" fill="var(--p)"/>
+    <rect x="163" y="123" width="130" height="6" fill="var(--b)"/>
+  </g>
+
+  <g class="c-amber">
+    <line x1="228" y1="166" x2="198" y2="132" stroke="var(--s)" stroke-width="1" opacity="0.7"/>
+    <line x1="228" y1="166" x2="228" y2="132" stroke="var(--s)" stroke-width="1" opacity="0.7"/>
+    <line x1="228" y1="166" x2="258" y2="132" stroke="var(--s)" stroke-width="1" opacity="0.7"/>
+    <line x1="228" y1="166" x2="174" y2="136" stroke="var(--s)" stroke-width="1" opacity="0.4"/>
+    <line x1="228" y1="166" x2="282" y2="136" stroke="var(--s)" stroke-width="1" opacity="0.4"/>
+  </g>
+
+  <g class="c-gray">
+    <rect x="156" y="242" width="43" height="14" fill="var(--b)" stroke="var(--s)" stroke-width="1.5"/>
+    <rect x="156" y="242" width="43" height="14" fill="url(#hatch2)"/>
+    <rect x="257" y="242" width="43" height="14" fill="var(--b)" stroke="var(--s)" stroke-width="1.5"/>
+    <rect x="257" y="242" width="43" height="14" fill="url(#hatch2)"/>
+  </g>
+
+  <g class="c-amber">
+    <path d="M228 158 l-9 12 h18 z" fill="var(--p)"/>
+    <circle cx="228" cy="166" r="5" fill="var(--p)" stroke="var(--s)" stroke-width="1"/>
+  </g>
+  <g class="c-teal">
+    <rect x="200" y="172" width="56" height="76" rx="3" fill="var(--b)" stroke="var(--s)" stroke-width="1.5"/>
+    <rect x="200" y="248" width="56" height="76" rx="3" fill="var(--p)" stroke="var(--s)" stroke-width="1.5"/>
+    <rect x="207" y="262" width="42" height="16" rx="2" fill="var(--b)" stroke="var(--s)" stroke-width="1"/>
+    <rect x="207" y="282" width="42" height="16" rx="2" fill="var(--b)" stroke="var(--s)" stroke-width="1"/>
+    <rect x="207" y="302" width="42" height="16" rx="2" fill="var(--b)" stroke="var(--s)" stroke-width="1"/>
+  </g>
+
+  <g class="c-gray">
+    <rect x="120" y="245" width="8" height="8" rx="1" fill="var(--p)" stroke="var(--s)" stroke-width="1"/>
+    <line x1="128" y1="249" x2="199" y2="249" stroke="var(--s)" stroke-width="2" stroke-dasharray="3 2"/>
+    <rect x="328" y="245" width="8" height="8" rx="1" fill="var(--p)" stroke="var(--s)" stroke-width="1"/>
+    <line x1="257" y1="249" x2="328" y2="249" stroke="var(--s)" stroke-width="2" stroke-dasharray="3 2"/>
+  </g>
+  <text class="ts" x="118" y="240" text-anchor="end">ốc M3 →</text>
+  <text class="ts" x="338" y="240">← ốc M3</text>
+
+  <line x1="130" y1="452" x2="326" y2="452" stroke="var(--border-strong)" stroke-width="2.5"/>
+  <text class="ts" x="228" y="468" text-anchor="middle">đáy ống = chân đế đứng vững</text>
+
+  <g stroke="var(--border-strong)" stroke-width="1" fill="none">
+    <path d="M294 63 H372"/>
+    <path d="M294 82 H360 L372 92"/>
+    <path d="M294 114 H360 L372 124"/>
+    <path d="M258 150 H360 L372 166"/>
+    <path d="M256 200 H372"/>
+    <path d="M300 249 H360 L372 258"/>
+    <path d="M256 300 H360 L372 320"/>
+    <path d="M312 400 H372"/>
+  </g>
+  <g class="t">
+    <text x="380" y="66">Kính đáy khay<tspan class="ts" x="380" dy="15">trên gờ đỡ 1.5–2mm</tspan></text>
+    <text x="380" y="96">Nước + hạt rác<tspan class="ts" x="380" dy="15">→ silhouette tối trên nền sáng</tspan></text>
+    <text x="380" y="128">Màng khuếch tán xếp lớp<tspan class="ts" x="380" dy="15">thêm/bớt lớp → chỉnh độ tán</tspan></text>
+    <text x="380" y="170">Buồng trộn ~8mm<tspan class="ts" x="380" dy="15">xoá hotspot nguồn điểm</tspan></text>
+    <text x="380" y="204">Module LED 37.5×10×16<tspan class="ts" x="380" dy="15">đầu LED hướng lên</tspan></text>
+    <text x="380" y="262">Vách đỡ (nắp) — bắt ốc M3<tspan class="ts" x="380" dy="15">ốc xuyên ngang thành ống, tháo được</tspan></text>
+    <text x="380" y="324">Lỗ giữa vách vừa module<tspan class="ts" x="380" dy="15">10×16 +0.4mm · giữ ma sát</tspan></text>
+    <text x="380" y="404">Thân kéo dài xuống<tspan class="ts" x="380" dy="15">bọc nửa pin + làm chân đế</tspan></text>
+  </g>
+
+  <text class="ts" x="228" y="500" text-anchor="middle" fill="var(--text-muted)">Mặt cắt minh hoạ · ống thẳng OD ~50mm · ID ~46mm</text>
+</svg>

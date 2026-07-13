@@ -1,0 +1,198 @@
+BÁO CÁO KỸ THUẬT: CẤU TRÚC CƠ KHÍ VÀ MÔ HÌNH VẬN HÀNH AQUA SCOPE
+(Trạm Quan Trắc & Đếm Hạt/Rác Thải Vĩ Mô Trong Dòng Chảy)
+
+Trạng thái dự án: Baseline "Backlit Silhouette" (đã sửa các lỗi vật lý của bản ý tưởng đầu).
+Mục tiêu quan sát: Đếm và ĐO KÍCH THƯỚC hạt nhựa/rác thải vĩ mô (1mm - 5mm) trong dòng chảy nước.
+
+Phạm vi trung thực: Hệ đếm/đo hạt bằng ảnh bóng đổ (silhouette), KHÔNG phân biệt hóa học nhựa/không-nhựa.
+Việc phân biệt nhựa cần nhuộm huỳnh quang (Nile Red) — ghi nhận là hướng mở rộng, không thuộc baseline.
+
+Tiêu chí cốt lõi (3 KHÔNG):
+1. KHÔNG chỉnh sửa thấu kính. (Thực nghiệm: lens gốc OV2640 tự nét macro ở cự ly 3-5cm, không cần vặn/thay.)
+2. KHÔNG dùng chip vi lưu kín (chống rò rỉ, tắc nghẽn với hạt 1-5mm).
+3. KHÔNG can thiệp thủ công trong vận hành (trừ vệ sinh định kỳ chống bám bẩn — hệ định vị mức demo/phòng lab).
+
+------------------------------------------------------------------
+1. TỔNG QUAN KIẾN TRÚC VẬT LÝ
+------------------------------------------------------------------
+Khối trụ chắn sáng NGẮN (~4-5cm), camera úp thẳng xuống từ nắp, đèn nền trắng khuếch tán chiếu ngược
+từ dưới đáy khay trong suốt lên. Gồm 3 phân khu:
+
+- Nắp trụ (Top Cap, tháo được): CHÍNH LÀ BASE MATCHBOXSCOPE ĐÃ IN (tái dùng nguyên bản, KHÔNG dựng nắp mới),
+  giữ mạch XIAO ESP32-S3 Sense, camera OV2640/OV3660 chĩa thẳng xuống. Bắt vít qua lỗ CÓ SẴN của base, tháo được
+  (KHÔNG dán chết, để bảo trì/chỉnh camera).
+- Thân trụ chắn sáng (Cylindrical Body): ống trụ THẲNG (KHÔNG phình rộng thành "cốc"), đường kính ngoài
+  = ĐÚNG footprint của base (~50x52mm) để base phủ kín miệng ống. Nhựa đen, CAO ~40-50mm, cố định cự ly nét 3-5cm
+  và cản ánh sáng môi trường; thành trong đen nhám hút phản xạ.
+  (CHỐT 2026-07-06: thực nghiệm cho thấy ống thẳng cho ảnh KHÔNG kém ống rộng — chất lượng silhouette do nội thất
+  đen + phơi sáng tay quyết định, không do bề rộng ống. Nên ưu tiên tái dùng base in sẵn; khay/cửa sổ/đèn nền co
+  theo cho lọt lòng ống tube_id~46mm, vùng nước ảnh hóa ~40mm, vẫn lấp gần đầy khung.)
+- Đáy dòng chảy (Bottom Stage): Khay nước hở đáy TRONG SUỐT (ĐĨA ACRYLIC tròn) + mép tràn giữ mực nước.
+  Hộp đèn nền (light box) nằm DƯỚI đáy khay: 1 đèn chiếu GIÁN TIẾP vào nền trắng, ánh sáng DỘI ngược lên (bounce).
+
+------------------------------------------------------------------
+2. VAI TRÒ CỦA KHỐI TRỤ (xương sống của hệ)
+------------------------------------------------------------------
+Ống trụ làm cùng lúc 4 việc, mỗi việc ảnh hưởng trực tiếp tới chất lượng dữ liệu:
+(1) Thước đo: cố định cứng cự ly camera-nước -> giữ mm/pixel ổn định -> đo kích thước hạt chính xác.
+(2) Buồng tối: chắn nắng/đèn phòng -> phơi sáng ổn định -> threshold đáng tin.
+(3) Chân máy: tiết diện lớn + ngắn -> cứng, chống rung -> ảnh nét, khung hình không lệch giữa các lần chụp.
+(4) Nhà đèn: giữ đèn nền và (nếu dùng) đèn phụ, thành trong đen nhám hút phản xạ lạc.
+
+Chuỗi phụ thuộc: chiều cao ống -> cự ly camera-nước -> FOV -> mm/pixel -> hạt nhỏ nhất thấy được.
+Vì lens nét ở 3-5cm, chọn cự ly làm việc ~40mm: FOV ngang ~46mm (khay lấp gần đầy khung),
+1mm ~ 35px ở UXGA (1600px) hoặc ~14px ở VGA (640px) -> đủ để đếm hạt 1-5mm.
+Ống ngắn ~4-5cm cứng hơn và dễ in hơn nhiều so với cột/ống 10-15cm của bản ý tưởng cũ.
+
+------------------------------------------------------------------
+3. THIẾT KẾ QUANG HỌC: BÓNG ĐỔ NỀN SÁNG (BACKLIT SILHOUETTE)
+------------------------------------------------------------------
+Nguyên lý: đèn LED TRẮNG dưới đáy khay trong suốt, chiếu ngược lên xuyên qua nước.
+Hạt hiện thành bóng ĐEN trên nền SÁNG đều. (Kỹ thuật shadowgraphy, chuẩn trong đo hạt.)
+
+HỘP ĐÈN NỀN (LIGHT BOX) — CHIẾU GIÁN TIẾP (BOUNCE), KHÔNG CHIẾU THẲNG:
+Một LED là nguồn ĐIỂM -> chiếu thẳng lên đáy khay sẽ tạo ĐỐM CHÓI (hotspot). Giải pháp: đèn KHÔNG chiếu
+thẳng lên khay, mà chiếu chếch/ngang vào NỀN/THÀNH TRẮNG rồi để ánh sáng DỘI (bounce) ít nhất 1 lần mới lên.
+Mặt trắng phản xạ trở thành một nguồn sáng diện rộng, đều. Xếp lớp từ dưới lên: LED (sát mép) -> khoang trộn
+sáng mặt trong TRẮNG mờ -> tấm khuếch tán cuối -> đáy khay đĩa acrylic trong.
+- Đặt LED SÁT MÉP, chiếu chếch/ngang; KHÔNG chiếu vào vùng ngay dưới camera (kẻo chỉ DỜI hotspot sang chỗ khác).
+- VÁCH CHẮN TIA THẲNG (baffle) ngay trước LED: chặn tia thẳng bắn lên đáy khay, chỉ cho phần đã phản xạ đi lên.
+  Đây là mẹo quan trọng nhất khi dùng 1 ĐÈN MẠNH (1 đèn mạnh đủ sáng nhưng dễ tạo hotspot hơn nhiều đèn nhỏ).
+- Mặt trong khoang TRẮNG mờ (khác thân trụ đen) -> buồng tích hợp sáng nhỏ, càng nhiều lần dội càng đều.
+- Nếu dùng đèn pin mini (kiểu lồng đèn): độ sáng yếu dần khi pin cạn -> khóa phơi sáng tay rồi chỉnh Exposure
+  khớp độ sáng thực; nếu đèn RGB/nhấp nháy PHẢI đặt về trắng tĩnh (màu đổi làm nền chập chờn, hỏng ảnh).
+
+Ba điều bắt buộc để KHÔNG bị cháy sáng (đúc kết từ thực nghiệm thực tế):
+a) KHUẾCH TÁN: giữ 1 lớp tấm mờ (mica mờ/giấy can) ngay dưới đáy khay -> làm mịn nền xám ĐỀU, không đốm chói.
+   Không để camera "nhìn thấy" con LED trực tiếp. (Bounce lo phần đều tổng thể; lớp khuếch tán lo phần mịn cục bộ.)
+b) PHƠI SÁNG THỦ CÔNG trên firmware (Matchboxscope / esp32-camera):
+   - Tắt AEC (auto exposure sensor)
+   - Tắt AEC DSP (aec2)
+   - Tắt AGC (auto gain)
+   - Gain = 0 (1x), Exposure (AEC value) để THẤP
+   Lưu ý: nếu chỉ kéo thanh Exposure mà CHƯA tắt AEC/AGC thì cảm biến liên tục ghi đè -> luôn cháy trắng.
+   (Có thể dùng lệnh serial: t<exposure>, g<gain>.)
+c) FRAMING: cho vùng sáng lấp ĐẦY khung hình, tránh viền đen lớn (viền đen phí pixel + đánh lừa auto-exposure).
+
+GIẢM CƯỜNG ĐỘ KHI SÁNG QUÁ MẠNH:
+- Khuếch tán/làm đều: 1-2 lớp giấy can, hoặc mica mờ (mica bền hơn giấy khi gần nước; giấy dễ ẩm, cong, ố).
+- Giảm độ sáng: chồng thêm giấy trắng thường, hoặc phim ND (Neutral Density) giảm sáng mà không đổi màu.
+- Cách "sạch" nhất - hạ dòng đèn bằng PWM/chiết áp/điện trở lớn hơn (chỉnh vô cấp) -> ưu tiên để tinh chỉnh cuối.
+- Làm TRƯỚC hết vẫn là khóa phơi sáng tay: nhiều ca "cháy sáng" là do AEC/AGC chứ không phải đèn quá mạnh.
+
+Độ phân giải: xem trực tiếp để thấp cho mượt; khi CHỤP để phân tích thì để CAO (SXGA/UXGA) + giảm nén JPEG.
+
+------------------------------------------------------------------
+4. KHAY DÒNG CHẢY & GIỮ MẶT NƯỚC PHẲNG
+------------------------------------------------------------------
+- Khay hở đáy trong suốt cho ánh sáng nền xuyên qua.
+- MÉP TRÀN (weir) giữ mực nước cố định -> mặt nước phẳng ổn định ở đúng cao độ nét.
+
+ĐỘ DÀY LỚP NƯỚC (~6mm) - VÌ SAO PHẢI MỎNG:
+Hạt nhựa NỔI HOẶC CHÌM (PE/PP nổi ở mặt nước; PET/PS chìm ở đáy acrylic) -> hạt nằm ở 2 MẶT PHẲNG cách nhau
+đúng bằng độ dày nước. Giữ nước MỎNG để: (1) cả hạt nổi lẫn chìm cùng nằm trong VÙNG NÉT (DOF) - nước sâu thì
+một lớp bị nhòe -> đo sai kích thước; (2) chống hạt XẾP CHỒNG theo phương đứng (2 bóng đè nhau -> đếm sai),
+nước mỏng ép hạt thành gần-một-lớp. Sàn dưới = hạt lớn nhất 5mm + ~1mm dư => CHỌN ~6mm (= cao độ mép tràn).
+Kèm theo: LẤY NÉT Ở GIỮA lớp nước (~3mm) để hạt nổi/chìm cách mặt nét đều nhau; và PHẢI KIỂM DOF trên phần cứng -
+nếu DOF < 6mm thì hạt nổi nhòe -> hạ xuống 5mm (tham số hóa).
+- TÙY CHỌN: một cửa sổ phẳng CỐ ĐỊNH (acrylic hoặc lam kính) đặt trên 2 gờ đỡ, sát trên mặt nước, để dập gợn sóng.
+  (KHÔNG dùng kính "thả nổi tự do" như bản cũ vì thủy tinh nặng hơn nước sẽ chìm -> phải GÁC GỜ.)
+
+CẤU TẠO ĐÁY KHAY: ĐĨA ACRYLIC TRÒN + CHỐNG RÒ
+Nhựa in 3D KHÔNG cho sáng xuyên đều (các lớp in tán xạ) -> chỉ dùng in 3D làm KHUNG ĐEN chắn sáng,
+còn "cửa sổ" trong suốt là ĐĨA ACRYLIC (mica) TRONG cắt tròn, lắp rời vào.
+VÌ SAO ACRYLIC (không phải lam kính): lam kính cố định kích thước (rộng chỉ 26mm) không phủ được khay tròn Ø40
+-> phải bóp vùng ảnh nhỏ. Acrylic cắt được đĩa tròn Ø bất kỳ -> GIỮ NGUYÊN khay tròn, vùng ảnh LẤP ĐẦY khung.
+Chụp silhouette không cần độ trong quang học cao (hạt nằm ngay trên tấm, đèn đã khuếch tán) nên acrylic thừa trong.
+TÁCH 2 LỚP: cửa sổ đáy = ACRYLIC TRONG (bóng nét); tấm khuếch tán = mica MỜ/giấy can RIÊNG ở dưới (đều sáng).
+Kiểu lắp: GỜ KÊ (ledge) + VÒNG ÉP (retainer) + SILICON:
+- Kích thước đĩa: cắt Ø hơi lớn hơn miệng khay (VD Ø42 cho khay trong Ø40, lọt bore ID46) để chồng lên gờ; dày 2-3mm; acrylic ĐÚC (cast).
+- Gờ kê: hốc lõm quanh miệng khay, ăn vào trong ~2.5mm, sâu ~ (độ dày đĩa + ~0.3mm cho silicon).
+- Chống rò: bơm viền mỏng SILICON TRUNG TÍNH (keo hồ cá) lên gờ TRƯỚC khi đặt đĩa, ấn nhẹ cho dàn đều.
+  KHÔNG dùng keo 502/cyanoacrylate (hơi keo làm acrylic MỜ TRẮNG - fogging). Không lau bằng dung dịch gốc amoniac (gây rạn).
+- Giữ cố định: một vòng ép in 3D thứ hai đè lên viền đĩa, bắt 3-4 vít M2.5 (hoặc ngàm snap-fit) -> vừa kín
+  vừa không cho đĩa trôi/nổi.
+- Dung sai in: chừa khe +0.3-0.4mm quanh đĩa; in khung đen mờ, mặt trong tối để chắn sáng lạc.
+- Acrylic DỄ XƯỚC -> vết xước đọc thành "hạt ảo"; thiết kế cửa sổ là chi tiết THẢ-VÀO THAY ĐƯỢC, lau nhẹ bằng khăn mềm.
+  Lam kính đang có tận dụng cho cửa sổ trên tùy chọn hoặc hiệu chuẩn/thử nghiệm.
+
+NƯỚC VÀO-RA QUA THÀNH BÊN (không băng qua cửa sổ):
+- Cổng nước vào/ra/xả nằm ở THÀNH nhựa in 3D, theo phương ngang; KHÔNG đổ nước từ trên xuống băng qua đĩa acrylic
+  (tránh che tầm nhìn camera và tránh khuấy động mặt nước). Đĩa acrylic ở đáy chỉ có nước đứng yên bên trên,
+  ánh sáng bên dưới. Cổng RA đặt SÁT ĐÁY thành nhựa (để flush hạt chìm); van xả đáy chỉ là TÙY CHỌN. KHÔNG khoan vào đĩa acrylic.
+
+------------------------------------------------------------------
+5. HỆ DÒNG CHẢY (bơm màng CHỦ ĐỘNG; yêu cầu: mọi hạt phải RA HẾT, không đọng)
+------------------------------------------------------------------
+CHỐT (2026-07-07): dòng do BƠM MÀNG RS365 12V CHỦ ĐỘNG lo toàn bộ fill/flow/flush — KHÔNG dựa trọng lực,
+KHÔNG dùng nhu động 28BYJ-48 (quá chậm, đã loại). Logic cũ "trọng lực đổ đầy / bơm chỉ chuyển nước sạch /
+xả van đáy / tốc độ bơm không quan trọng" LÀ THỜI NHU ĐỘNG — nay BỎ toàn bộ.
+
+YÊU CẦU DUY NHẤT CỦA KHAY: mọi hạt phải RA HẾT sau flush, KHÔNG sót ở góc/khe (hạt sót bị đếm dồn sang
+mẫu sau -> sai đếm + hỏng truy xuất nguồn gốc). KHÔNG có lưới/gờ giữ hạt — việc "giữ hạt để chụp" là do
+BƠM TẮT (pha Settle), không do cơ học. (Câu "giữ lại hạt kẻo trôi" từng gây hiểu nhầm; nỗi lo gốc là hạt
+bị KẸT/ĐỌNG không ra được.)
+
+BƠM RS365 đặt ở đầu ra, hút chuỗi nguồn -> khay -> bơm -> thải:
+- Cấp mẫu VÀO + tạo dòng: bơm RS365 hút (nước + hạt bị kéo qua).
+- Giữ mực nước khi chụp: VAN MÀNG BƠM TỰ CHẶN lúc tắt (KHÔNG cần mép tràn/standpipe để giữ mực).
+- Xả/flush hạt: bơm chạy MẠNH cuốn hạt (nổi + chìm) ra cổng ra -> thải.
+Đánh đổi có chủ đích: HẠT <2mm ĐI QUA BƠM (nút hẹp là van màng ~2-4mm, không phải ống). Chấp nhận vì phạm
+vi test <2mm; nếu quay lại dải 5mm phải xét lại.
+
+BỐ TRÍ CỔNG (2 cổng chính trên THÀNH nhựa, ĐỐI TÂM 180°, KHÔNG đụng đĩa acrylic):
+- VÀO = KHE KHUẾCH TÁN ~20x3mm ở sát đáy: biến tia thành MÀNG rộng -> xóa 2 thùy tĩnh hai bên + quét mặt
+  đáy. Qua lưới thô khe >5mm (để hạt LỌT vào, chỉ chặn rác to lá/cành).
+- RA = cổng rút SÁT ĐÁY (KHÔNG ở đỉnh 6mm) nối ống hút bơm -> thải: đặt thấp để flush được cả HẠT CHÌM
+  (PET/PS) nằm ở đáy. (LƯU Ý: mép tràn ở đỉnh chỉ hớt được hạt NỔI -> hạt chìm đọng vĩnh viễn; đó là lỗi
+  tiềm ẩn của bản "RA = mép tràn 6mm", đã sửa.)
+- Mép tràn (weir) và van xả đáy: TÙY CHỌN (chặn-tràn an toàn / xả cạn-vệ sinh), không bắt buộc.
+
+CHỐNG ĐỌNG:
+- Hình học: bo FILLET R>=2.5mm góc đáy-thành; mặt đĩa acrylic PHẲNG BẰNG SÀN + silicon vê tròn mối nối ->
+  xóa rãnh/khe vành bẫy hạt; khay tròn nên thành đã cong liên tục (không góc đứng).
+- Vận tốc: sàn PHẲNG NGANG (yêu cầu quang học) nên KHÔNG nghiêng sàn; chống lắng bằng vận tốc dòng. Flush
+  cho vận tốc khay ~10 cm/s (Q ~1.4 L/min, RS365 thừa) để nhấc hạt; fill êm ~2 cm/s (Q ~0.3 L/min) để phân
+  bố đều, không văng hạt/khuấy mặt. CÙNG 1 BƠM, 2 mức PWM.
+- Kiểm nghiệm trực tiếp: thả ~20 hạt (nổi + chìm), chạy 1 chu trình flush, ĐẾM HẠT SÓT. Sót = còn điểm đọng
+  -> soi lại 3 chỗ nguy hiểm: (1) hạt chìm + cổng ra cao, (2) rãnh quanh đĩa acrylic, (3) 2 thùy tĩnh + short-circuit.
+
+ĐIỆN BƠM: RS365 12V qua MOSFET IRLZ44N + diode flyback 1N4007 + tụ 470-1000uF; nguồn adapter 12V/2A; ESP32
+nuôi 5V riêng (USB hoặc buck 12V->5V); CHUNG GND. Nối khay bằng ống bơm RS365 ĐK 8mm (mặc định hiểu ID~8mm;
+nếu là OD thì ID~6 — CẦN XÁC NHẬN). Bơm là module MUA SẴN, đặt tách rời chống rung.
+
+------------------------------------------------------------------
+6. NGUYÊN LÝ HOẠT ĐỘNG: CƠ CHẾ "STOP-FLOW"
+------------------------------------------------------------------
+B1. Cấp mẫu: bơm RS365 hút đầy khay (qua lưới >5mm), fill êm để hạt phân bố đều.
+B2. Đóng băng (Settle): TẮT bơm 1-2s; van màng bơm tự chặn giữ mực nước, mặt nước phẳng lại.
+B3. Chụp ảnh: bật đèn nền trắng ổn định, chụp ảnh độ phân giải CAO.
+B4. Đếm & Đo: grayscale -> threshold -> connected components -> centroid + diện tích -> đếm & phân bố kích thước.
+B5. Xả mẫu: tắt đèn, BƠM CHẠY MẠNH flush cuốn hạt (nổi + chìm) ra cổng ra sát đáy -> thải, nạp mẫu mới, lặp lại.
+
+VÌ SAO PHẢI DỪNG DÒNG (Stop-Flow là BẮT BUỘC, KHÔNG phải di sản bơm nhu động — độc lập loại bơm):
+(1) Rolling shutter của OV2640/OV3660 làm hạt đang trôi MÉO (skew) + nhòe -> sai phép ĐO KÍCH THƯỚC.
+(2) Mặt nước chảy gợn sóng -> khúc xạ bóng hạt, lệch vị trí/size biểu kiến; settle làm mặt phẳng lại.
+(3) Đếm cần MẪU RỜI RẠC, thể tích cố định (1 ảnh = N hạt) -> quy ra nồng độ + truy xuất nguồn gốc.
+(4) Pipeline threshold->connected-components->count là thuật toán MỘT KHUNG -> chảy sẽ ĐẾM ĐÔI.
+=> Bơm màng RS365 nhanh làm Stop-Flow TỐT HƠN (fill/flush chớp nhoáng, nhiều mẫu/phút), KHÔNG thừa.
+
+------------------------------------------------------------------
+7. XỬ LÝ ẢNH (CLASSICAL CV, ON-DEVICE) — KHÔNG DÙNG FOMO
+------------------------------------------------------------------
+- Lý do bỏ FOMO: ảnh vào 96x96 -> hạt 1mm gần như vô hình sau downsample; FOMO chỉ trả centroid, không đo kích thước.
+- Pipeline: ảnh xám -> ngưỡng hóa (bắt vùng tối trên nền sáng) -> gán nhãn liên thông (connected components)
+  -> mỗi blob cho tọa độ tâm + diện tích -> đếm số hạt và phân bố kích thước 1-5mm.
+- Chạy on-device trên XIAO ESP32-S3 (PSRAM, 240MHz); có thể hạ ảnh xử lý về VGA (~14px/mm) để vừa RAM.
+- Mở rộng tương lai (không thuộc baseline): phân biệt nhựa/không-nhựa bằng nhuộm Nile Red + LED 365nm
+  + kính lọc vàng (longpass) + phân tích màu.
+
+------------------------------------------------------------------
+8. LỊCH SỬ THIẾT KẾ (tóm tắt các sửa đổi so với bản ý tưởng đầu)
+------------------------------------------------------------------
+- UV huỳnh quang "chỉ nhựa phát sáng" là SAI vật lý (đa số nhựa không tự phát quang, rác hữu cơ lại phát quang)
+  -> đổi sang backlit silhouette ánh sáng trắng, phát biểu mục tiêu trung thực.
+- FOMO không thấy hạt 1mm, không đo kích thước -> Classical CV ảnh phân giải cao.
+- Kính "thả nổi" sẽ chìm -> cửa sổ kính cố định + mép tràn.
+- Logic bơm mâu thuẫn -> bơm phía nước sạch, hạt vào bằng trọng lực, xả van đáy.
+- Cự ly 10-15cm + cột conson -> thực nghiệm nét ở 3-5cm -> ống ngắn, cứng, khay lấp đầy khung.

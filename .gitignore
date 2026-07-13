@@ -1,0 +1,7 @@
+.claude/
+.theia/
+.vscode/
+build/
+bin/
+out/
+*.local

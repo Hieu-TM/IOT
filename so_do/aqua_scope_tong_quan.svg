@@ -1,0 +1,99 @@
+<svg width="100%" viewBox="0 0 680 600" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>Aqua Scope — Sơ đồ tổng quan bộ mô hình</title>
+  <desc>Sơ đồ khối cắt dọc: nắp trên + camera XIAO ESP32-S3, ống ảnh đen mờ ~40mm, khay Macro-Flow đáy trong có weir và lưới thô, hộp đèn nền backlit, van xả đáy; trạm bơm tách rời hút phía sạch.</desc>
+  <style>
+    text{font-family:'Segoe UI',system-ui,sans-serif}
+    .th{font-weight:600;font-size:15px;fill:var(--text-primary)}
+    .t{font-weight:400;font-size:14px;fill:var(--text-primary)}
+    .ts{font-weight:400;font-size:12px;fill:var(--text-secondary)}
+    :root{--text-primary:#1a1a1a;--text-secondary:#4a4a4a;--text-muted:#8a8a8a;--border-strong:#9a9a9a}
+    .c-gray{--p:#e3e3e3;--b:#f5f5f5;--s:#9a9a9a;--t:#333}
+    .c-blue{--p:#bcd6f5;--b:#e8f1fc;--s:#5b8fd6;--t:#1a3a63}
+    .c-teal{--p:#bfe6df;--b:#e7f6f2;--s:#3fae9c;--t:#134b43}
+    .c-amber{--p:#f6e0a8;--b:#fdf3d6;--s:#d6a53a;--t:#5c440f}
+    @media (prefers-color-scheme:dark){
+      :root{--text-primary:#ececec;--text-secondary:#b6b6b6;--text-muted:#8a8a8a;--border-strong:#7a7a7a}
+      .c-gray{--p:#3a3a3a;--b:#2a2a2a;--s:#7a7a7a;--t:#e0e0e0}
+      .c-blue{--p:#28405f;--b:#1c2c40;--s:#5b8fd6;--t:#cfe0f6}
+      .c-teal{--p:#1f4a43;--b:#173832;--s:#3fae9c;--t:#bfe6df}
+      .c-amber{--p:#5c4a1e;--b:#3d3010;--s:#d6a53a;--t:#f6e0a8}
+    }
+  </style>
+
+  <text class="th" x="330" y="34" text-anchor="middle">Aqua Scope — Sơ đồ tổng quan bộ mô hình</text>
+
+  <!-- working distance dimension -->
+  <g stroke="var(--border-strong)" stroke-width="1" fill="none">
+    <path d="M198 130 V224"/>
+    <path d="M193 132 l5 -6 5 6"/>
+    <path d="M193 222 l5 6 5 -6"/>
+  </g>
+  <text class="ts" x="190" y="180" text-anchor="end">~40mm</text>
+
+  <!-- Box 1: cap + camera -->
+  <g class="c-blue">
+    <rect x="215" y="64" width="230" height="66" rx="6" fill="var(--b)" stroke="var(--s)" stroke-width="1.5"/>
+    <path d="M330 130 l-8 12 h16 z" fill="var(--p)" stroke="var(--s)" stroke-width="1"/>
+  </g>
+  <text class="th" x="330" y="92" text-anchor="middle" fill="var(--text-primary)">Nắp trên + Camera</text>
+  <text class="ts" x="330" y="110" text-anchor="middle">XIAO ESP32-S3 · base Matchboxscope</text>
+
+  <!-- Box 2: imaging tube -->
+  <g class="c-gray">
+    <rect x="215" y="144" width="230" height="66" rx="6" fill="var(--b)" stroke="var(--s)" stroke-width="1.5"/>
+  </g>
+  <text class="th" x="330" y="172" text-anchor="middle" fill="var(--text-primary)">Ống ảnh (nội thất đen mờ)</text>
+  <text class="ts" x="330" y="190" text-anchor="middle">chặn sáng ngoài · cố định ~40mm</text>
+
+  <!-- Box 3: macro-flow tray -->
+  <g class="c-teal">
+    <rect x="215" y="224" width="230" height="66" rx="6" fill="var(--b)" stroke="var(--s)" stroke-width="1.5"/>
+  </g>
+  <text class="th" x="330" y="252" text-anchor="middle" fill="var(--text-primary)">Khay Macro-Flow</text>
+  <text class="ts" x="330" y="270" text-anchor="middle">đáy trong · weir giữ mực · lưới &gt;5mm</text>
+
+  <!-- Box 4: light box -->
+  <g class="c-amber">
+    <rect x="215" y="304" width="230" height="66" rx="6" fill="var(--b)" stroke="var(--s)" stroke-width="1.5"/>
+  </g>
+  <text class="th" x="330" y="330" text-anchor="middle" fill="var(--text-primary)">Hộp đèn nền (LED xuôi)</text>
+  <text class="ts" x="330" y="348" text-anchor="middle">màng khuếch tán chỉnh được ↓ chi tiết</text>
+
+  <!-- Box 5: drain -->
+  <g class="c-gray">
+    <rect x="255" y="384" width="150" height="48" rx="6" fill="var(--b)" stroke="var(--s)" stroke-width="1.5"/>
+  </g>
+  <text class="th" x="330" y="406" text-anchor="middle" fill="var(--text-primary)">Van xả đáy</text>
+  <text class="ts" x="330" y="423" text-anchor="middle">xả trọng lực</text>
+
+  <!-- inlet water (left) -->
+  <g stroke="var(--border-strong)" stroke-width="2" fill="none">
+    <path d="M70 257 H213"/>
+    <path d="M205 251 l8 6 -8 6"/>
+  </g>
+  <text class="ts" x="70" y="245">Nước nguồn + rác</text>
+  <text class="ts" x="70" y="278" fill="var(--text-muted)">qua ống ID ≥6mm + lưới thô</text>
+
+  <!-- pump station (right) -->
+  <g class="c-gray">
+    <rect x="500" y="224" width="160" height="66" rx="6" fill="var(--b)" stroke="var(--s)" stroke-width="1.5"/>
+  </g>
+  <text class="th" x="580" y="252" text-anchor="middle" fill="var(--text-primary)">Trạm bơm (tách rời)</text>
+  <text class="ts" x="580" y="270" text-anchor="middle">hút phía sạch · cách rung</text>
+  <g stroke="var(--border-strong)" stroke-width="2" fill="none">
+    <path d="M447 257 H498"/>
+    <path d="M490 251 l8 6 -8 6"/>
+  </g>
+
+  <!-- drain out (bottom) -->
+  <g stroke="var(--border-strong)" stroke-width="2" fill="none">
+    <path d="M330 432 V470"/>
+    <path d="M324 462 l6 8 6 -8"/>
+  </g>
+  <text class="ts" x="345" y="466">→ xả rác ra ngoài</text>
+
+  <!-- cycle note -->
+  <text class="ts" x="330" y="522" text-anchor="middle" fill="var(--text-muted)">Chu trình Stop-Flow: bơm đầy khay → dừng 1–2s → bật đèn nền chụp SXGA/UXGA →</text>
+  <text class="ts" x="330" y="540" text-anchor="middle" fill="var(--text-muted)">CV trên thiết bị (ngưỡng → connected-components → đếm + phân bố kích thước) → tắt đèn, xả, lặp</text>
+  <text class="ts" x="330" y="574" text-anchor="middle" fill="var(--text-muted)">Ảnh chụp: TẮT AEC/AEC-DSP/AGC · Gain=0 · phơi sáng thấp (serial t/g) để nền không cháy trắng</text>
+</svg>
