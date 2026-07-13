@@ -1,0 +1,10 @@
+# Runtime data — created on first run, never committed (web_plan.md §3, §9)
+backend/data/
+
+# Python virtual environment (verification/dev only)
+.venv/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
