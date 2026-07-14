@@ -12,7 +12,7 @@ Module 2 owns this file only. Wiring it into `main.py` is Module 6's job.
 import io
 import json
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
@@ -29,8 +29,13 @@ router = APIRouter(prefix="/api", tags=["ingest"])
 
 
 def _generate_sample_code() -> str:
-    """`S{yyyyMMdd}-{HHmmss}-{4 hex}` per §2.1 when the device sends none."""
-    now = datetime.now()
+    """`S{yyyyMMdd}-{HHmmss}-{4 hex}` per §2.1 when the device sends none.
+
+    DATA-1 (SPEC §6): must be UTC, not local time — captured_at/received_at
+    are stored naive-UTC, so a local-time code would disagree with the audit
+    columns it summarizes by exactly the machine's UTC offset.
+    """
+    now = datetime.now(timezone.utc)
     return f"S{now:%Y%m%d}-{now:%H%M%S}-{secrets.token_hex(2)}"
 
 
@@ -66,6 +71,11 @@ async def ingest(
     # Prefer the multipart-provided size (set by Starlette while parsing the
     # form, before this handler runs) so an oversized upload is rejected
     # without an extra full-body read into app memory.
+    # NOTE: this is a 413 *contract* (correct status code + no huge row/file
+    # written), not a DoS control — Starlette has already buffered the whole
+    # multipart body into memory before this handler ever runs. A real
+    # request-body-size cap belongs in ASGI middleware or the reverse proxy,
+    # in front of that buffering.
     if image.size is not None and image.size > config.MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="image exceeds upload size limit")
     contents = await image.read()

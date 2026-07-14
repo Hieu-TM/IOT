@@ -7,7 +7,7 @@ dir) so it does not depend on Module 6 wiring `main.py`, nor touch the real
 
 import io
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi import FastAPI
@@ -242,3 +242,30 @@ def test_particle_negative_size_mm_returns_422(client):
     md["particles"][0]["size_mm"] = -1
     resp = _post(client, md)
     assert resp.status_code == 422
+
+
+# --- DATA-1 (final-review fix): _generate_sample_code must use UTC -------
+#
+# `_generate_sample_code()` previously called `datetime.now()` (local time),
+# so the human-readable sample_code disagreed with the naive-UTC
+# captured_at/received_at audit columns by exactly the machine's UTC offset.
+# On this dev machine (UTC+7) that made the code's embedded timestamp ~7h
+# ahead of the audit columns it's supposed to summarize.
+
+
+def test_generated_sample_code_timestamp_is_utc_not_local(client):
+    md = _metadata()
+    del md["sample_code"]  # force server generation
+    before = datetime.now(timezone.utc)
+    resp = _post(client, md)
+    after = datetime.now(timezone.utc)
+    assert resp.status_code == 201
+
+    code = resp.json()["sample_code"]  # "S{yyyyMMdd}-{HHmmss}-{4 hex}"
+    date_part, time_part, _hex_part = code.split("-")
+    embedded = datetime.strptime(date_part[1:] + time_part, "%Y%m%d%H%M%S")
+    embedded = embedded.replace(tzinfo=timezone.utc)
+
+    # Local-time code would be off from UTC by the machine's offset (hours),
+    # far outside this small request-latency window.
+    assert before - timedelta(seconds=2) <= embedded <= after + timedelta(seconds=2)

@@ -110,8 +110,25 @@ class SampleDetail(BaseModel):
 # --- Shared filtering ---------------------------------------------------
 
 
+def _to_naive_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """Normalize a query datetime to match the naive-UTC storage invariant
+    (DATA-1, SPEC §6).
+
+    FastAPI parses a `from`/`to` query value with a UTC offset (e.g.
+    `+07:00`) into a tz-aware datetime, but Sample.captured_at is stored
+    naive-UTC. SQLite's DATETIME bind processor formats the bound value's
+    wall-clock fields and drops tzinfo *without* converting to UTC first, so
+    an un-normalized tz-aware value would anchor the filter at the wrong
+    instant (a multi-hour window shift). A naive input is already assumed to
+    be UTC (unchanged).
+    """
+    return dt.astimezone(timezone.utc).replace(tzinfo=None) if dt and dt.tzinfo else dt
+
+
 def _apply_filters(stmt, batch_lot, date_from, date_to):
     """Apply the batch_lot + captured_at range filters shared by list/export."""
+    date_from = _to_naive_utc(date_from)
+    date_to = _to_naive_utc(date_to)
     if batch_lot is not None:
         stmt = stmt.where(Sample.batch_lot == batch_lot)
     if date_from is not None:

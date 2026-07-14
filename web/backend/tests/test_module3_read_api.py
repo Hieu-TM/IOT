@@ -13,7 +13,7 @@ Seed fixture (captured_at ascending):
 
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 from fastapi import FastAPI
@@ -227,6 +227,42 @@ def test_export_csv_empty_result_no_error(client):
     assert lines[0].startswith("sample_code,")
 
 
+# --- DATA-1 (final-review fix): tz-aware from/to must normalize to UTC ---
+#
+# `date_from`/`date_to` are parsed by FastAPI into a tz-aware datetime when
+# the query string carries a UTC offset (e.g. `+07:00`), but Sample.captured_at
+# is stored naive-UTC. SQLite's DATETIME bind processor formats the bound
+# value's wall-clock fields and silently drops tzinfo *without* converting to
+# UTC first, so an un-normalized tz-aware `from`/`to` anchors the filter at
+# the wrong wall-clock time (a 7h window shift on this UTC+7 fixture).
+#
+# s1.captured_at = 2026-07-10 08:00:00 UTC (naive, LOT-A). Query with
+# from=2026-07-10T14:00:00+07:00 == 2026-07-10T07:00:00 UTC, so s1 (08:00
+# UTC) is >= that instant and must be INCLUDED. The unfixed code drops the
+# offset and compares against naive 14:00:00 directly, wrongly excluding s1
+# (08:00 < 14:00).
+
+
+def test_list_filter_tz_aware_from_normalizes_to_utc(client):
+    r = client.get(
+        "/api/samples",
+        params={"from": "2026-07-10T14:00:00+07:00", "batch_lot": "LOT-A"},
+    )
+    body = r.json()
+    assert body["total"] == 1
+    assert body["items"][0]["sample_code"] == "S-001"
+
+
+def test_export_csv_filter_tz_aware_from_normalizes_to_utc(client):
+    r = client.get(
+        "/api/export.csv",
+        params={"from": "2026-07-10T14:00:00+07:00", "batch_lot": "LOT-A"},
+    )
+    lines = [ln for ln in r.text.splitlines() if ln.strip()]
+    # header + 2 particles of S-001 — proves S-001 was matched, not dropped.
+    assert len(lines) == 1 + 2
+
+
 @pytest.fixture
 def injection_client():
     """Separate throwaway DB/app for the CSV-injection test (SEC-2, SPEC §6,
@@ -244,7 +280,11 @@ def injection_client():
 
     with Session(engine) as s:
         sample = Sample(
-            sample_code="S-INJ",
+            # SEC-1's allowlist (^[A-Za-z0-9._-]{1,64}$) blocks a leading
+            # `= + @` or TAB/CR from ever reaching sample_code via ingest —
+            # but `-` IS allowed AND IS a dangerous CSV prefix, so "-001" is
+            # the one injection vector still reachable in sample_code.
+            sample_code="-001",
             batch_lot="=1+1",  # malicious: leading '='
             device_id="=cmd|' /C calc'!A0",  # malicious: leading '='
             captured_at=datetime(2026, 7, 12, 8, 0, 0),
@@ -253,7 +293,7 @@ def injection_client():
             image_width=640,
             image_height=480,
             px_per_mm=14.0,
-            raw_metadata_json='{"sample_code":"S-INJ"}',
+            raw_metadata_json='{"sample_code":"-001"}',
         )
         s.add(sample)
         s.commit()
@@ -263,6 +303,7 @@ def injection_client():
             _mk_particle(0, 0.5, "+SUM(A1)"),  # malicious label
             _mk_particle(1, 0.6, "plastic"),  # benign label
         ]
+        particles[0].centroid_x = -1.5  # negative numeric, not a CSV vector
         for p in particles:
             p.sample_id = sample.id
         s.add_all(particles)
@@ -297,11 +338,18 @@ def test_export_csv_neutralizes_formula_injection(injection_client):
     batch_lot_idx = header.index("batch_lot")
     device_id_idx = header.index("device_id")
     label_idx = header.index("label")
+    sample_code_idx = header.index("sample_code")
+    centroid_x_idx = header.index("centroid_x")
 
     for row in data_rows:
         assert row[batch_lot_idx].startswith("'=")
         assert row[device_id_idx].startswith("'=")
+        assert row[sample_code_idx] == "'-001"  # SEC-1/SEC-2 interlock
 
     labels = [row[label_idx] for row in data_rows]
     assert "'+SUM(A1)" in labels  # malicious cell prefixed, raw value not first char
     assert "plastic" in labels  # benign cell left untouched
+
+    # Regression: a negative NUMERIC cell must stay unquoted (isinstance(str)
+    # guard in _csv_safe) — only string cells are candidates for prefixing.
+    assert "-1.5" in [row[centroid_x_idx] for row in data_rows]
