@@ -192,6 +192,8 @@ web/
 
 ## 5. Frontend design
 
+> **Thiết kế thị giác chi tiết + trang Stream demo:** xem `docs/superpowers/specs/2026-07-14-web-frontend-design.md` (design tokens, 4 trang, component/trạng thái, responsive/a11y). Mục này giữ mô tả chức năng gốc; design doc bổ sung tầng thiết kế UI/UX.
+
 Server-rendered Jinja2 (built-in FastAPI, không cần build step) + JS thuần chỉ cho 2 phần thực sự cần tương tác client-side: canvas vẽ bbox và chart. Bảng/filter/phân trang đều render trực tiếp từ Jinja2 theo query-string GET — đơn giản nhất có thể, không cần client-side routing/state.
 
 - **`/` (Dashboard):** mẫu gần nhất (sample_code, batch_lot, captured_at, particle_count), vài số liệu nhanh (số mẫu hôm nay, tổng hạt hôm nay), bảng mini 5 mẫu gần nhất, link sang History.
