@@ -11,11 +11,15 @@ Seed fixture (captured_at ascending):
   s3  None   2026-07-13  0 particles
 """
 
+import csv
+import io
 from datetime import datetime
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 
@@ -183,3 +187,121 @@ def test_export_csv_respects_filter(client):
     lines = [ln for ln in r.text.splitlines() if ln.strip()]
     # header + 2 particles of S-001 only
     assert len(lines) == 1 + 2
+
+
+def test_export_csv_particle_query_count_is_constant(client):
+    """PERF-1 regression guard (SPEC docs/superpowers/specs/2026-07-14-web-system-design.md
+    §6, §4 FR-3): export.csv must fetch every matched sample's particles in a
+    single query, not one query per sample. The old N+1 loop issued one
+    `SELECT ... FROM particle` per sample (3, for this fixture's 3-sample
+    seed); the fix caps it at exactly 1 regardless of how many samples match.
+    """
+    particle_selects = []
+
+    def _capture(conn, cursor, statement, parameters, context, executemany):
+        # Match the particle table's FROM clause specifically — `sample`
+        # also has a `particle_count` *column*, so a bare "particle"
+        # substring check would over-count the sample SELECT too.
+        stmt = statement.strip().lower()
+        if stmt.startswith("select") and "from particle" in stmt:
+            particle_selects.append(statement)
+
+    event.listen(Engine, "before_cursor_execute", _capture)
+    try:
+        r = client.get("/api/export.csv")
+    finally:
+        event.remove(Engine, "before_cursor_execute", _capture)
+
+    assert r.status_code == 200
+    assert len(particle_selects) == 1  # not one-per-sample
+
+
+def test_export_csv_empty_result_no_error(client):
+    """PERF-1 edge case (SPEC §6): when the sample filter matches nothing,
+    export.csv must short-circuit to just the header row rather than issuing
+    a particle query with an empty `IN ()` list (some drivers reject it)."""
+    r = client.get("/api/export.csv", params={"batch_lot": "NOPE"})
+    assert r.status_code == 200
+    lines = [ln for ln in r.text.splitlines() if ln.strip()]
+    assert lines == [lines[0]]  # header only
+    assert lines[0].startswith("sample_code,")
+
+
+@pytest.fixture
+def injection_client():
+    """Separate throwaway DB/app for the CSV-injection test (SEC-2, SPEC §6,
+    §4 FR-3) — kept isolated from the shared `client` fixture so its
+    malicious rows don't shift the exact row counts asserted by
+    test_export_csv_one_row_per_particle / test_export_csv_respects_filter.
+    Reuses the same engine-setup pattern (StaticPool in-memory SQLite,
+    dependency_overrides)."""
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        sample = Sample(
+            sample_code="S-INJ",
+            batch_lot="=1+1",  # malicious: leading '='
+            device_id="=cmd|' /C calc'!A0",  # malicious: leading '='
+            captured_at=datetime(2026, 7, 12, 8, 0, 0),
+            particle_count=2,
+            image_path="images/S-INJ.jpg",
+            image_width=640,
+            image_height=480,
+            px_per_mm=14.0,
+            raw_metadata_json='{"sample_code":"S-INJ"}',
+        )
+        s.add(sample)
+        s.commit()
+        s.refresh(sample)
+
+        particles = [
+            _mk_particle(0, 0.5, "+SUM(A1)"),  # malicious label
+            _mk_particle(1, 0.6, "plastic"),  # benign label
+        ]
+        for p in particles:
+            p.sample_id = sample.id
+        s.add_all(particles)
+        s.commit()
+
+    app = FastAPI()
+    app.include_router(router)
+
+    def _override_get_session():
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = _override_get_session
+    with TestClient(app) as c:
+        yield c
+
+
+def test_export_csv_neutralizes_formula_injection(injection_client):
+    """SEC-2 (SPEC §6, §4 FR-3): a cell whose first char is `= + - @` (or a
+    leading TAB/CR) must not reach the spreadsheet as a live formula. The
+    output-encoding fix prefixes a literal single quote at the CSV boundary
+    only — the underlying DB value is untouched (detail/JSON endpoints are
+    unaffected)."""
+    r = injection_client.get("/api/export.csv")
+    assert r.status_code == 200
+
+    rows = list(csv.reader(io.StringIO(r.text)))
+    header = rows[0]
+    data_rows = [row for row in rows[1:] if row]
+    assert len(data_rows) == 2  # sanitization must not add/drop rows
+
+    batch_lot_idx = header.index("batch_lot")
+    device_id_idx = header.index("device_id")
+    label_idx = header.index("label")
+
+    for row in data_rows:
+        assert row[batch_lot_idx].startswith("'=")
+        assert row[device_id_idx].startswith("'=")
+
+    labels = [row[label_idx] for row in data_rows]
+    assert "'+SUM(A1)" in labels  # malicious cell prefixed, raw value not first char
+    assert "plastic" in labels  # benign cell left untouched

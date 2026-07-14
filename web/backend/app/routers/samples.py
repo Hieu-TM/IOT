@@ -235,6 +235,25 @@ _CSV_PARTICLE_COLS = [
     "confidence",
 ]
 
+# SEC-2 (SPEC docs/superpowers/specs/2026-07-14-web-system-design.md §6, §4
+# FR-3): a spreadsheet treats a cell starting with any of these as a live
+# formula/command, not text.
+_DANGEROUS_CSV_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value):
+    """Neutralize CSV formula injection (SEC-2) at the CSV boundary only.
+
+    Prefixes a literal single quote onto any string cell whose first
+    character is `= + - @` (or a leading TAB/CR), forcing spreadsheet apps to
+    render it as text instead of executing it as a formula/command. A no-op
+    for non-str values (numeric cells, None) and for strings that don't start
+    with a dangerous character — it never touches what's stored in the DB.
+    """
+    if isinstance(value, str) and value.startswith(_DANGEROUS_CSV_PREFIXES):
+        return "'" + value
+    return value
+
 
 @router.get("/export.csv")
 def export_csv(
@@ -245,7 +264,12 @@ def export_csv(
 ):
     """Audit export: one row per particle, plus one row for zero-particle
     samples so every matched sample is represented (§2.2, §5). Same filters as
-    the list view."""
+    the list view.
+
+    PERF-1 (SPEC §6): particles for every matched sample are fetched in a
+    single query and grouped by sample_id in memory, instead of one query per
+    sample.
+    """
     samples = session.exec(
         _apply_filters(select(Sample), batch_lot, date_from, date_to)
         .order_by(Sample.captured_at.asc(), Sample.id.asc())
@@ -255,19 +279,30 @@ def export_csv(
     writer = csv.writer(buf)
     writer.writerow(_CSV_SAMPLE_COLS + _CSV_PARTICLE_COLS)
 
-    for s in samples:
-        sample_cells = [getattr(s, col) for col in _CSV_SAMPLE_COLS]
-        particles = session.exec(
+    # One IN() query for all matched samples' particles (PERF-1) — short-
+    # circuit when there are no samples so we never issue `IN ()`, which some
+    # drivers reject.
+    particles_by_sample: Dict[int, List[Particle]] = {}
+    if samples:
+        sample_ids = [s.id for s in samples]
+        all_particles = session.exec(
             select(Particle)
-            .where(Particle.sample_id == s.id)
-            .order_by(Particle.blob_index)
+            .where(Particle.sample_id.in_(sample_ids))
+            .order_by(Particle.sample_id, Particle.blob_index)
         ).all()
+        for p in all_particles:
+            particles_by_sample.setdefault(p.sample_id, []).append(p)
+
+    for s in samples:
+        sample_cells = [_csv_safe(getattr(s, col)) for col in _CSV_SAMPLE_COLS]
+        particles = particles_by_sample.get(s.id, [])
         if not particles:
             writer.writerow(sample_cells + [""] * len(_CSV_PARTICLE_COLS))
         else:
             for p in particles:
                 writer.writerow(
-                    sample_cells + [getattr(p, col) for col in _CSV_PARTICLE_COLS]
+                    sample_cells
+                    + [_csv_safe(getattr(p, col)) for col in _CSV_PARTICLE_COLS]
                 )
 
     filename = f"aqua_scope_export_{datetime.now(timezone.utc):%Y%m%d_%H%M%S}.csv"
