@@ -62,8 +62,15 @@ async def ingest(
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=json.loads(exc.json()))
 
-    # --- 2. Validate image (§2.1: 400 on missing/unopenable) ------------
+    # --- 2. Validate image (SEC-3 SPEC §6: 413 before 400 on unopenable) --
+    # Prefer the multipart-provided size (set by Starlette while parsing the
+    # form, before this handler runs) so an oversized upload is rejected
+    # without an extra full-body read into app memory.
+    if image.size is not None and image.size > config.MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="image exceeds upload size limit")
     contents = await image.read()
+    if len(contents) > config.MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="image exceeds upload size limit")
     if not contents:
         raise HTTPException(status_code=400, detail="image part is empty")
     try:

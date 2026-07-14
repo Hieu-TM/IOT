@@ -157,3 +157,74 @@ def test_unreadable_image_returns_400(client):
     with Session(client._engine) as s:
         assert s.exec(select(Sample).where(Sample.sample_code == "S-BAD")).first() is None
     assert not (client._images_dir / "S-BAD.jpg").exists()
+
+
+# --- SEC-1: sample_code path traversal (SPEC §6, §5.1) -------------------
+
+
+def test_path_traversal_sample_code_returns_422_and_writes_nothing(client, tmp_path):
+    resp = _post(client, _metadata(sample_code="../../evil"))
+    assert resp.status_code == 422
+    # No file escaped anywhere under tmp_path, and nothing landed in images/.
+    assert not any(tmp_path.rglob("evil.jpg"))
+    assert not (client._images_dir / "evil.jpg").exists()
+    with Session(client._engine) as s:
+        assert s.exec(select(Sample)).all() == []
+
+
+def test_sample_code_allowed_edge_value_returns_201(client):
+    resp = _post(client, _metadata(sample_code="S_20260713.v2-01"))
+    assert resp.status_code == 201
+
+
+# --- SEC-3: oversized upload rejected (SPEC §6) ---------------------------
+
+
+def test_oversized_image_returns_413(client, monkeypatch):
+    # Keep the test fast: shrink the limit rather than generate 8MiB+ bytes.
+    # Router reads config.MAX_UPLOAD_BYTES live, same pattern as IMAGES_DIR.
+    monkeypatch.setattr(config, "MAX_UPLOAD_BYTES", 100)
+    oversized = b"\xff\xd8\xff" + b"\x00" * 200
+    resp = _post(client, _metadata(sample_code="S-BIG"), image=oversized)
+    assert resp.status_code == 413
+
+
+# --- DATA-1: naive-UTC datetimes (SPEC §6) --------------------------------
+
+
+def test_captured_at_with_offset_stored_as_naive_utc(client):
+    resp = _post(
+        client,
+        _metadata(sample_code="S-TZ", captured_at="2026-07-13T14:32:05+07:00"),
+    )
+    assert resp.status_code == 201
+    with Session(client._engine) as s:
+        sample = s.exec(select(Sample).where(Sample.sample_code == "S-TZ")).one()
+        assert sample.captured_at == datetime(2026, 7, 13, 7, 32, 5)
+        assert sample.captured_at.tzinfo is None
+        assert sample.received_at.tzinfo is None
+
+
+def test_captured_at_without_offset_returns_422(client):
+    resp = _post(
+        client,
+        _metadata(sample_code="S-NOTZ", captured_at="2026-07-13T14:32:05"),
+    )
+    assert resp.status_code == 422
+
+
+# --- SEC-4 / §5.1: particle field bounds ----------------------------------
+
+
+def test_particle_confidence_out_of_range_returns_422(client):
+    md = _metadata(sample_code="S-CONF")
+    md["particles"][0]["confidence"] = 1.5
+    resp = _post(client, md)
+    assert resp.status_code == 422
+
+
+def test_particle_negative_size_mm_returns_422(client):
+    md = _metadata(sample_code="S-NEG")
+    md["particles"][0]["size_mm"] = -1
+    resp = _post(client, md)
+    assert resp.status_code == 422

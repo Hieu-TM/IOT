@@ -30,3 +30,7 @@ CLASS_LIST = ["plastic", "bubble", "organic", "fiber", "unknown"]
 # Below this confidence the device/mock relabels a particle as "unknown"
 # (backend only stores the final label — §2.1).
 CONFIDENCE_THRESHOLD = 0.5
+
+# SEC-3 (SPEC §6): reject uploads above this size (413) before buffering the
+# whole body into RAM.
+MAX_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 MiB
