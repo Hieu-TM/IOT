@@ -1,0 +1,92 @@
+/* ===========================================================================
+   Aqua Scope — Module 5 · frontend (server-rendered Jinja2 + Tailwind Play)
+   Chỉ chứa những gì Tailwind utilities không tiện diễn tả (keyframes, scrollbar,
+   reduced-motion, canvas caret). Theme tokens đồng bộ với base.html tailwind.config.
+   =========================================================================== */
+
+:root {
+  --scan: theme(colors.safe.500);
+}
+
+/* ---- Body backdrop: subtle industrial grid, không noise ảnh performance ---- */
+body {
+  background-image:
+    radial-gradient(900px 500px at 80% -8%, rgba(249, 115, 22, 0.06), transparent 60%),
+    linear-gradient(transparent 23px, rgba(148, 163, 184, 0.035) 24px),
+    linear-gradient(90deg, transparent 23px, rgba(148, 163, 184, 0.035) 24px);
+  background-size: auto, 24px 24px, 24px 24px;
+  background-attachment: fixed;
+}
+
+/* ---- Card: glass + border + ring trên nền tối (ui-ux-pro-max dark glass) ---- */
+.card {
+  border: 1px solid theme(colors.ink.700 / 80%);
+  background: linear-gradient(180deg, theme(colors.ink.850 / 92%), theme(colors.ink.900 / 92%));
+  border-radius: 1rem;
+  backdrop-filter: blur(6px);
+}
+.card-hover { transition: border-color .2s, transform .2s, box-shadow .2s; }
+.card-hover:hover { border-color: theme(colors.safe.500 / 45%); box-shadow: 0 0 0 1px theme(colors.safe.500 / 25%), 0 8px 30px -12px rgba(0,0,0,.6); }
+
+/* ---- KPI tile: số lớn + micro-label (font-mono cho dữ liệu đo lường) ---- */
+.kpi-num { font-family: theme(fontFamily.mono); font-feature-settings: "tnum"; }
+
+/* ---- Focus ring dùng cho mọi interactive (UX: focus-states) ---- */
+.focusable:focus-visible {
+  outline: 2px solid theme(colors.safe.500);
+  outline-offset: 2px;
+  border-radius: .5rem;
+}
+
+/* ---- Scan-line pulse cho badge "LIVE/đang đo" ---- */
+@keyframes scanPulse { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
+.dot-live { animation: scanPulse 1.6s ease-in-out infinite; }
+
+/* ---- Table hover row ---- */
+.row-hover:hover { background: theme(colors.ink.800 / 60%); }
+
+/* ---- Chip phân loại hạt: trước màu luôn kèm glyph (a11y: không chỉ dựa vào màu) ---- */
+.chip {
+  display: inline-flex; align-items: center; gap: .35rem;
+  font-family: theme(fontFamily.mono); font-size: 11px;
+  padding: .15rem .5rem; border-radius: 9999px;
+  border: 1px solid currentColor;
+}
+
+/* ---- Truncate 1 dòng cho mã mẫu dài ---- */
+.code-elide { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- Custom scrollbar (tinh tế, không phân tâm) ---- */
+* { scrollbar-width: thin; scrollbar-color: theme(colors.ink.700) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: theme(colors.ink.700); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: theme(colors.steel.600); }
+
+/* ---- Canvas overlay: tuyệt đối khớp thẻ img, pointer none để click穿透 qua ảnh ---- */
+.bbox-stage { position: relative; line-height: 0; }
+.bbox-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.bbox-stage img { width: 100%; height: auto; display: block; }
+
+/* ---- JSON viewer <pre> ---- */
+.raw-json { font-family: theme(fontFamily.mono); font-size: 12px; line-height: 1.55; white-space: pre-wrap; break-inside: avoid; }
+
+/* ---- Reduced motion (UX: reduced-motion) ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+  .dot-live { animation: none; opacity: 1; }
+}
+
+/* ---- Pagination active ---- */
+.page-active {
+  background: theme(colors.safe.500 / 18%);
+  color: theme(colors.safe.500);
+  outline: 1px solid theme(colors.safe.500 / 45%);
+  outline-offset: -1px;
+}
+
+/* ---- Banner lỗi nhỏ (khi fixture chưa sẵn sàng theo id) ---- */
+.banner-error {
+  border: 1px solid theme(colors.bad.500 / 45%);
+  background: theme(colors.bad.500 / 10%);
+  color: theme(colors.bad.400);
+}

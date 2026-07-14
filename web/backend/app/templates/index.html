@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% set recent = recent_sample %}
+{% set bd = recent.label_breakdown if recent else {} %}
+{% set today_n = stats.samples_today %}
+{% set today_p = stats.particles_today %}
+
+{% block content %}
+{# ── Banner lỗi (vd. khi truy cập /samples/{id} không có trong fixture — Module 5) #}
+{% if error %}
+<section class="banner-error mb-6 flex items-start gap-3 rounded-xl px-4 py-3" role="alert">
+  <svg viewBox="0 0 24 24" class="mt-0.5 h-5 w-5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 8v4m0 4h.01M12 3l9 16H3z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <p class="font-mono text-[13px]">{{ error }}</p>
+</section>
+{% endif %}
+
+<section class="mb-8">
+  {# ── Hero: tiêu đề trang + trạng thái trạm #}
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight text-slate-100 sm:text-3xl">Dashboard <span class="text-steel-500">·</span> tổng quan trạm đo</h1>
+      <p class="mt-1 font-mono text-[12px] text-steel-400">QC nước đầu vào nhà máy thực phẩm · kiểm tra hạt/rác thải vĩ mô trước khi vào dây chuyền.</p>
+    </div>
+    <span class="inline-flex items-center gap-2 rounded-full border border-ok-500/40 bg-ok-500/10 px-3 py-1.5 font-mono text-[11px] uppercase tracking-widest text-ok-400">
+      <span class="dot-live h-2 w-2 rounded-full bg-ok-500"></span> Audit append-only
+    </span>
+  </div>
+</section>
+
+{% if error %}
+<section class="mb-6" role="alert">
+  <p class="banner-error flex items-center gap-2 rounded-xl px-4 py-3 font-mono text-[12.5px]">
+    <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 8v5M12 16.5v.5" stroke-linecap="round"/><circle cx="12" cy="12" r="8.5" stroke-linecap="round"/></svg>
+    {{ error }}
+  </p>
+</section>
+{% endif %}
+
+{# ── KPI row (ui-ux-pro-max: stat tile bento) #}
+<section class="grid grid-cols-2 gap-4 sm:grid-cols-4" aria-label="Số liệu nhanh">
+  {% set kpis = [
+    ('Mẫu hôm nay', today_n, 'mẫu', 'ok'),
+    ('Hạt vĩ mô hôm nay', today_p, 'hạt', 'warn'),
+    ('Hạt mẫu gần nhất', recent.particle_count if recent else 0, 'hạt', 'safe'),
+    ('Tổng mẫu (DB)', stats.total_samples, 'mẫu', 'steel')
+  ] %}
+  {% for label, value, unit, tone in kpis %}
+    {% set tone_map = {'ok':'text-ok-400','warn':'text-warn-400','safe':'text-safe-400','steel':'text-slate-200'} %}
+    <article class="card card-hover p-4">
+      <p class="font-mono text-[11px] uppercase tracking-widest text-steel-400">{{ label }}</p>
+      <p class="kpi-num mt-2 text-3xl font-semibold {{ tone_map[tone] }}">{{ value }}</p>
+      <p class="mt-0.5 font-mono text-[11px] text-steel-500">{{ unit }}</p>
+    </article>
+  {% endfor %}
+</section>
+
+{# ── Mẫu gần nhất: card phóng to + mini table các mẫu gần #}
+<section class="mt-8 grid gap-6 lg:grid-cols-[1.3fr_1fr]">
+  {# Cột trái: thẻ mẫu mới nhất #}
+  <article class="card overflow-hidden">
+    <header class="flex flex-wrap items-center justify-between gap-3 border-b border-ink-700/70 px-5 py-3">
+      <div class="flex items-center gap-2">
+        <svg viewBox="0 0 24 24" class="h-4 w-4 text-safe-400" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12h14M5 12l4-4M5 12l4 4M19 5v14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <h2 class="text-sm font-semibold uppercase tracking-widest text-steel-400">Mẫu gần nhất</h2>
+      </div>
+      {% if recent %}
+      <a href="/samples/{{ recent.id }}" class="focusable inline-flex items-center gap-1.5 rounded-lg bg-safe-500/12 px-3 py-1.5 text-[13px] font-medium text-safe-400 ring-1 ring-safe-500/30 transition-colors hover:bg-safe-500/20">
+        Xem chi tiết
+        <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      {% endif %}
+    </header>
+
+    {% if recent %}
+    <div class="grid gap-5 p-5 sm:grid-cols-[1fr_1fr]">
+      {# Ảnh thumbnail (lazy) #}
+      <a href="/samples/{{ recent.id }}" class="focusable block overflow-hidden rounded-lg border border-ink-700/60 bg-ink-950">
+        <img src="{{ recent.image_url }}" alt="Ảnh gốc mẫu {{ recent.sample_code }}" loading="lazy" class="aspect-[4/3] w-full object-cover" />
+      </a>
+
+      {# Metadata #}
+      <dl class="grid grid-cols-3 gap-x-4 gap-y-3 self-center">
+        <dt class="font-mono text-[11px] uppercase tracking-wider text-steel-500">Mã mẫu</dt>
+        <dd class="col-span-2 font-mono text-[13px] text-slate-100">{{ recent.sample_code }}</dd>
+
+        <dt class="font-mono text-[11px] uppercase tracking-wider text-steel-500">Mã lô</dt>
+        <dd class="col-span-2 font-mono text-[13px] text-slate-200">{{ recent.batch_lot or '—' }}</dd>
+
+        <dt class="font-mono text-[11px] uppercase tracking-wider text-steel-500">Chụp lúc</dt>
+        <dd class="col-span-2 font-mono text-[13px] text-slate-200">{{ recent.captured_at[:19].replace('T', ' ') }}</dd>
+
+        <dt class="font-mono text-[11px] uppercase tracking-wider text-steel-500">Thiết bị</dt>
+        <dd class="col-span-2 font-mono text-[13px] text-steel-400">{{ recent.device_id }}</dd>
+
+        <dt class="font-mono text-[11px] uppercase tracking-wider text-steel-500">Số hạt</dt>
+        <dd class="col-span-2 font-mono text-lg font-semibold text-safe-400">{{ recent.particle_count }}</dd>
+      </dl>
+    </div>
+
+    {# Phân bố loại của mẫu gần nhất (chip, không chỉ màu) #}
+    <div class="border-t border-ink-700/70 px-5 py-4">
+      <p class="mb-2 font-mono text-[11px] uppercase tracking-widest text-steel-500">Phân bố loại hạt</p>
+      <div class="flex flex-wrap gap-2">
+        {% set order = ['plastic','bubble','organic','fiber','unknown'] %}
+        {% set vi = {'plastic':'Plastic','bubble':'Bubble','organic':'Organic','fiber':'Fiber','unknown':'Unknown'} %}
+        {% set glyph = {'plastic':'P','bubble':'B','organic':'O','fiber':'F','unknown':'?'} %}
+        {% set colors = {'plastic':'text-lbl-plastic','bubble':'text-lbl-bubble','organic':'text-lbl-organic','fiber':'text-lbl-fiber','unknown':'text-lbl-unknown'} %}
+        {% for k in order %}
+          {% if bd.get(k, 0) > 0 %}
+          <span class="chip {{ colors[k] }}"><span aria-hidden="true" class="font-bold">{{ glyph[k] }}</span>{{ vi[k] }} · {{ bd[k] }}</span>
+          {% endif %}
+        {% endfor %}
+        {% if not bd %}<span class="font-mono text-[12px] text-steel-600">Không có hạt</span>{% endif %}
+      </div>
+    </div>
+    {% else %}
+    <p class="p-8 text-center font-mono text-[13px] text-steel-500">Chưa có mẫu nào. Chạy <code class="text-safe-400">python web/mock_sender.py</code> để tạo dữ liệu.</p>
+    {% endif %}
+  </article>
+
+  {# Cột phải: 5 mẫu gần nhất (mini table) #}
+  <article class="card">
+    <header class="flex items-center justify-between border-b border-ink-700/70 px-5 py-3">
+      <h2 class="text-sm font-semibold uppercase tracking-widest text-steel-400">5 mẫu gần nhất</h2>
+      <a href="/history" class="focusable text-[12px] font-medium text-safe-400 hover:text-safe-500">Tất cả →</a>
+    </header>
+    <ul class="divide-y divide-ink-700/60">
+      {% for s in recent_items %}
+      <li>
+        <a href="/samples/{{ s.id }}" class="focusable block px-5 py-3 transition-colors hover:bg-ink-800/50">
+          <div class="flex items-center justify-between gap-3">
+            <span class="code-elide font-mono text-[12px] text-slate-200" title="{{ s.sample_code }}">{{ s.sample_code }}</span>
+            <span class="font-mono text-[15px] font-semibold text-safe-400">{{ s.particle_count }}<span class="text-[10px] text-steel-500"> hạt</span></span>
+          </div>
+          <div class="mt-1 flex items-center justify-between font-mono text-[10.5px] text-steel-500">
+            <span>{{ s.captured_at[:16].replace('T',' ') }}</span>
+            <span>{{ s.batch_lot or '—' }}</span>
+          </div>
+        </a>
+      </li>
+      {% else %}
+      <li class="px-5 py-6 text-center font-mono text-[12px] text-steel-600">(chưa có dữ liệu)</li>
+      {% endfor %}
+    </ul>
+  </article>
+</section>
+{% endblock %}

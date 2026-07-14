@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b0f14" />
+  <title>{% block title %}Aqua Scope{% endblock %} · Trạm Quan Trắc Hạt Vĩ Mô</title>
+
+  {# ── Fonts: Fira Sans (UI) + Fira Code (dữ liệu / mã mẫu) — ui-ux-pro-max typography pick #}
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  {# ── Tailwind Play CDN (no build step). Bật darkMode class + config tokens đồng bộ với §design-system. #}
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            // Bảng màu "industrial grey + safety orange" (ui-ux-pro-max, Dark Mode OLED)
+            ink: { 950: '#0b0f14', 900: '#0f1419', 850: '#131a22', 800: '#1a2230', 700: '#273142', 600: '#334155' },
+            steel: { 400: '#94a3b8', 500: '#64748b', 600: '#475569' },
+            safe: { 400: '#fb923c', 500: '#f97316', 600: '#ea580c' },   // CTA — safety orange
+            ok: { 400: '#34d399', 500: '#10b981' },
+            warn: { 400: '#fbbf24', 500: '#f59e0b' },
+            bad: { 400: '#f87171', 500: '#ef4444' },
+            // label particle (distinguishable, not colour-only — luôn kèm glyph/text)
+            lbl: { plastic: '#60a5fa', bubble: '#22d3ee', organic: '#a3e635', fiber: '#c084fc', unknown: '#94a3b8' }
+          },
+          fontFamily: {
+            sans: ['"Fira Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"Fira Code"', 'ui-monospace', 'monospace']
+          },
+          boxShadow: { glow: '0 0 12px rgba(249,115,22,.35)' }
+        }
+      }
+    }
+  </script>
+
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+
+<body class="min-h-full bg-ink-950 text-slate-200 font-sans antialiased selection:bg-safe-500/30 selection:text-safe-400">
+
+  {# ── Decorative top scan-line (gợi không khí "trạm đo") #}
+  <div aria-hidden="true" class="fixed inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-safe-500/60 to-transparent"></div>
+
+  {# ── Floating navbar (ui-ux-pro-max: top spacing, không dán sát edge) #}
+  <header class="sticky top-3 z-30 mx-auto w-[min(96%,80rem)]">
+    <nav class="flex items-center justify-between gap-3 rounded-2xl border border-ink-700/80 bg-ink-900/80 px-4 py-3 shadow-2xl backdrop-blur supports-[backdrop-filter]:bg-ink-900/70">
+      <a href="/" class="group flex items-center gap-3" aria-label="Aqua Scope — trang chính">
+        <span class="grid h-9 w-9 place-items-center rounded-xl bg-safe-500/15 text-safe-400 ring-1 ring-safe-500/40 group-hover:bg-safe-500/25 transition-colors">
+          {# Inline SVG icon (no emoji — ui-ux-pro-max rule) — water droplet + aperture #}
+          <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M12 3.5c3.2 4 5.5 7 5.5 9.7a5.5 5.5 0 1 1-11 0C6.5 10.5 8.8 7.5 12 3.5Z" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="13" r="2.1" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span class="leading-tight">
+          <span class="block font-semibold tracking-tight text-slate-100">Aqua Scope</span>
+          <span class="block font-mono text-[11px] uppercase tracking-widest text-steel-400">Trạm Quan Trắc Hạt Vĩ Mô</span>
+        </span>
+      </a>
+
+      <div class="flex items-center gap-1 sm:gap-2">
+        {% set path = request.url.path if request is defined else '' %}
+        {% macro nav_item(href, label, icon_path) %}
+          <a href="{{ href }}"
+             class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors
+                    {{ 'bg-safe-500/15 text-safe-400 ring-1 ring-safe-500/40' if path == href else 'text-steel-400 hover:bg-ink-800 hover:text-slate-200' }}">
+            <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">{{ icon_path | safe }}</svg>
+            <span class="hidden sm:inline">{{ label }}</span>
+          </a>
+        {% endmacro %}
+        {{ nav_item('/', 'Dashboard', '<path d="M4 12h3v6h4v-4h2v4h4v-6h3M4 12l8-7 8 7" stroke-linecap="round" stroke-linejoin="round"/>') }}
+        {{ nav_item('/history', 'Lịch sử', '<path d="M4 6h16M4 12h16M4 18h10" stroke-linecap="round"/><circle cx="18" cy="18" r="3" stroke-linecap="round"/>') }}
+      </div>
+    </nav>
+  </header>
+
+  <main class="mx-auto w-[min(96%,80rem)] px-1 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+  {# ── Footer: lời nhắn append-only + phiên bản #}
+  <footer class="mx-auto w-[min(96%,80rem)] px-1 pb-10 pt-2">
+    <p class="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] text-steel-600">
+      <span class="inline-flex items-center gap-1.5">
+        <span class="h-1.5 w-1.5 rounded-full bg-ok-500"></span> Audit append-only
+      </span>
+      <span aria-hidden="true">·</span>
+      <span>Không có API sửa/xoá — mọi bản ghi bất biến</span>
+      <span aria-hidden="true">·</span>
+      <span>Module 5 · Frontend (Jinja2 + Tailwind + Chart.js)</span>
+    </p>
+  </footer>
+
+  {# ── Chart.js vendor local (no CDN) + module scripts #}
+  <script src="/static/js/vendor/chart.umd.min.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

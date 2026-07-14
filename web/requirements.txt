@@ -1,0 +1,6 @@
+# Aqua Scope · web/backend (Module 5 + Phase sau)
+# Chỉ những gì cần chạy Module 5 dev + Module 6 cuối cùng. Module 1 sẽ bổ sung
+# sqlmodel/python-multipart/pillow vào khi làm data layer thật.
+fastapi>=0.110
+uvicorn[standard]>=0.27
+jinja2>=3.1

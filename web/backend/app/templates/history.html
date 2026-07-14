@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Lịch sử{% endblock %}
+
+{% set show_from = query.from or '' %}
+{% set show_to = query.to or '' %}
+{% set show_lot = query.batch_lot or '' %}
+{% set total = page_data.total %}
+{% set page = page_data.page %}
+{% set page_size = page_data.page_size %}
+{% set pages = (total + page_size - 1) // page_size if total else 1 %}
+
+{% set glyph = {'plastic':'P','bubble':'B','organic':'O','fiber':'F','unknown':'?'} %}
+{% set vi = {'plastic':'Plastic','bubble':'Bubble','organic':'Organic','fiber':'Fiber','unknown':'Unknown'} %}
+{% set colors = {'plastic':'text-lbl-plastic','bubble':'text-lbl-bubble','organic':'text-lbl-organic','fiber':'text-lbl-fiber','unknown':'text-lbl-unknown'} %}
+
+{% macro label_chips(bd) %}
+  {% set order = ['plastic','bubble','organic','fiber','unknown'] %}
+  <div class="flex flex-wrap gap-1.5">
+  {% for k in order %}
+    {% if bd.get(k, 0) > 0 %}
+    <span class="chip {{ colors[k] }}"><span aria-hidden="true" class="font-bold">{{ glyph[k] }}</span>{{ vi[k] }} {{ bd[k] }}</span>
+    {% endif %}
+  {% endfor %}
+  {% if not bd %}<span class="font-mono text-[11px] text-steel-600">—</span>{% endif %}
+  </div>
+{% endmacro %}
+
+{% block content %}
+<section class="mb-6">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight text-slate-100 sm:text-3xl">Lịch sử <span class="text-steel-500">·</span> bản ghi audit</h1>
+      <p class="mt-1 font-mono text-[12px] text-steel-400">{{ total }} mẫu · thêm mới bất biến, không sửa / không xoá.</p>
+    </div>
+    {# Nút xuất CSV — trỏ tới /api/export.csv cùng filter (plan §5) #}
+    <a href="/api/export.csv{%- if show_from -%}?from={{ show_from }}{%- endif -%}{%- if show_to -%}&to={{ show_to }}{%- endif -%}{%- if show_lot -%}&batch_lot={{ show_lot }}{%- endif -%}"
+       class="focusable inline-flex items-center gap-2 rounded-xl border border-ok-500/40 bg-ok-500/10 px-4 py-2 text-sm font-medium text-ok-400 transition-colors hover:bg-ok-500/20">
+      <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 4v10m0 0l-3.5-3.5M12 14l3.5-3.5M5 18h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Xuất CSV
+    </a>
+  </div>
+</section>
+
+{# ── Filter form (GET, server re-render — plan §5) #}
+<section class="card mb-6 p-4">
+  <form method="get" action="/history" class="grid grid-cols-1 gap-3 sm:grid-cols-4">
+    <div>
+      <label for="f-from" class="mb-1 block font-mono text-[11px] uppercase tracking-wider text-steel-500">Từ ngày</label>
+      <input id="f-from" name="from" type="date" value="{{ show_from }}" class="focusable w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-mono text-[13px] text-slate-200" />
+    </div>
+    <div>
+      <label for="f-to" class="mb-1 block font-mono text-[11px] uppercase tracking-wider text-steel-500">Đến ngày</label>
+      <input id="f-to" name="to" type="date" value="{{ show_to }}" class="focusable w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-mono text-[13px] text-slate-200" />
+    </div>
+    <div>
+      <label for="f-lot" class="mb-1 block font-mono text-[11px] uppercase tracking-wider text-steel-500">Mã lô</label>
+      <input id="f-lot" name="batch_lot" type="text" value="{{ show_lot }}" placeholder="LOT-2026-07-14-A" class="focusable w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-mono text-[13px] text-slate-200" />
+    </div>
+    <div class="flex items-end gap-2">
+      <button type="submit" class="focusable inline-flex items-center gap-2 rounded-xl bg-safe-500 px-4 py-2 text-sm font-semibold text-ink-950 shadow-glow transition-colors hover:bg-safe-400">
+        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 4h11l3 3v13H5z" stroke-linejoin="round"/><path d="M8 11h8M8 15h5" stroke-linecap="round"/></svg>
+        Lọc
+      </button>
+      <a href="/history" class="focusable rounded-xl border border-ink-700 px-4 py-2 text-sm font-medium text-steel-400 transition-colors hover:bg-ink-800 hover:text-slate-200">Xoá lọc</a>
+    </div>
+  </form>
+</section>
+
+{# ── Audit table — overflow-x-auto (UX: table handling mobile) #}
+<section class="card overflow-hidden">
+  <div class="overflow-x-auto">
+    <table class="w-full min-w-[760px] text-left">
+      <thead>
+        <tr class="border-b border-ink-700/70 bg-ink-850/60 font-mono text-[11px] uppercase tracking-wider text-steel-400">
+          <th class="px-4 py-3 font-medium">Mã mẫu</th>
+          <th class="px-4 py-3 font-medium">Mã lô</th>
+          <th class="px-4 py-3 font-medium">Thời gian chụp</th>
+          <th class="px-4 py-3 text-right font-medium">Số hạt</th>
+          <th class="px-4 py-3 font-medium">Phân bố loại</th>
+          <th class="px-4 py-3 text-right font-medium">Chi tiết</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-ink-700/50">
+      {% for s in page_data.items %}
+        <tr class="row-hover transition-colors">
+          <td class="px-4 py-3"><a href="/samples/{{ s.id }}" class="focusable code-elide font-mono text-[12px] text-slate-100 hover:text-safe-400" title="{{ s.sample_code }}">{{ s.sample_code }}</a></td>
+          <td class="px-4 py-3 font-mono text-[12px] text-steel-300">{{ s.batch_lot or '—' }}</td>
+          <td class="whitespace-nowrap px-4 py-3 font-mono text-[12px] text-steel-300">{{ s.captured_at[:19].replace('T', ' ') }}</td>
+          <td class="px-4 py-3 text-right font-mono text-[15px] font-semibold text-safe-400">{{ s.particle_count }}</td>
+          <td class="px-4 py-3">{{ label_chips(s.label_breakdown) }}</td>
+          <td class="px-4 py-3 text-right">
+            <a href="/samples/{{ s.id }}" class="focusable inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 font-mono text-[11px] font-medium text-safe-400 ring-1 ring-safe-500/30 transition-colors hover:bg-safe-500/15">
+              Xem
+              <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </a>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="px-4 py-10 text-center font-mono text-[13px] text-steel-500">Không có mẫu nào khớp bộ lọc{%- if show_from or show_to or show_lot -%} · thử <a href="/history" class="text-safe-400 hover:text-safe-500 hover:underline">xoá lọc</a>{%- endif -%}.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{# ── Pagination #}
+{% if total > 0 %}
+<nav class="mt-6 flex flex-wrap items-center justify-between gap-3" aria-label="Phân trang">
+  <p class="font-mono text-[12px] text-steel-500">
+    Trang {{ page }}/{{ pages }} · hiển thị {{ page_data.items|length }} / {{ total }} mẫu
+  </p>
+  <div class="flex items-center gap-1">
+    {# query string giữ lại các filter có giá trị + thêm page — dùng macro để tái sử dụng #}
+    {% macro qs(p) -%}
+      {%- set parts = [] -%}
+      {%- if show_from -%}{%- set _ = parts.append('from=' ~ show_from) -%}{%- endif -%}
+      {%- if show_to -%}{%- set _ = parts.append('to=' ~ show_to) -%}{%- endif -%}
+      {%- if show_lot -%}{%- set _ = parts.append('batch_lot=' ~ show_lot) -%}{%- endif -%}
+      {%- if parts -%}?{{ parts|join('&') }}&page={{ p }}{%- else -%}?page={{ p }}{%- endif -%}
+    {%- endmacro %}
+    {% if page > 1 %}
+      <a href="/history{{ qs(page - 1) }}" class="focusable rounded-lg border border-ink-700 px-3 py-1.5 font-mono text-[12px] text-steel-300 hover:bg-ink-800">← Trước</a>
+    {% else %}
+      <span class="cursor-not-allowed rounded-lg border border-ink-800 px-3 py-1.5 font-mono text-[12px] text-ink-700">← Trước</span>
+    {% endif %}
+    {% for p in range(1, pages + 1) %}
+      {% if p == page %}
+        <span class="page-active rounded-lg px-3 py-1.5 font-mono text-[12px] font-semibold">{{ p }}</span>
+      {% elif p == 1 or p == pages or (p >= page - 1 and p <= page + 1) %}
+        <a href="/history{{ qs(p) }}" class="focusable rounded-lg border border-ink-700 px-3 py-1.5 font-mono text-[12px] text-steel-300 hover:bg-ink-800">{{ p }}</a>
+      {% elif p == 2 or p == pages - 1 %}
+        <span class="px-1 font-mono text-[12px] text-steel-600">…</span>
+      {% endif %}
+    {% endfor %}
+    {% if page < pages %}
+      <a href="/history{{ qs(page + 1) }}" class="focusable rounded-lg border border-ink-700 px-3 py-1.5 font-mono text-[12px] text-steel-300 hover:bg-ink-800">Sau →</a>
+    {% else %}
+      <span class="cursor-not-allowed rounded-lg border border-ink-800 px-3 py-1.5 font-mono text-[12px] text-ink-700">Sau →</span>
+    {% endif %}
+  </div>
+</nav>
+{% endif %}
+{% endblock %}
