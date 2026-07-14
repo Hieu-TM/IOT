@@ -165,8 +165,11 @@ def test_unreadable_image_returns_400(client):
 def test_path_traversal_sample_code_returns_422_and_writes_nothing(client, tmp_path):
     resp = _post(client, _metadata(sample_code="../../evil"))
     assert resp.status_code == 422
-    # No file escaped anywhere under tmp_path, and nothing landed in images/.
-    assert not any(tmp_path.rglob("evil.jpg"))
+    # `../../evil` resolves ABOVE the images dir, so check the actual escape
+    # targets — not tmp_path.rglob, which can't see above tmp_path.
+    escape_target = (client._images_dir / "../../evil.jpg").resolve()
+    assert not escape_target.exists()
+    assert not (tmp_path.parent / "evil.jpg").exists()
     assert not (client._images_dir / "evil.jpg").exists()
     with Session(client._engine) as s:
         assert s.exec(select(Sample)).all() == []
@@ -175,6 +178,17 @@ def test_path_traversal_sample_code_returns_422_and_writes_nothing(client, tmp_p
 def test_sample_code_allowed_edge_value_returns_201(client):
     resp = _post(client, _metadata(sample_code="S_20260713.v2-01"))
     assert resp.status_code == 201
+
+
+@pytest.mark.parametrize("evil", ["evil\n", "evil\r"])
+def test_sample_code_trailing_newline_returns_422(client, evil):
+    # `^...$` + re.match accepts a trailing \n/\r (the `\n` reaches
+    # write_bytes and crashes on Windows) — the validator must fullmatch so
+    # the char never reaches the filesystem (SEC-1, SPEC §6).
+    resp = _post(client, _metadata(sample_code=evil))
+    assert resp.status_code == 422
+    with Session(client._engine) as s:
+        assert s.exec(select(Sample)).all() == []
 
 
 # --- SEC-3: oversized upload rejected (SPEC §6) ---------------------------

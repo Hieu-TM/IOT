@@ -128,7 +128,10 @@ class IngestPayload(BaseModel):
         # SEC-1 (SPEC §6, §5.1): sample_code is used verbatim as an image
         # filename, so `/ \ ..` must never reach the filesystem. Missing
         # sample_code stays valid — the server generates one.
-        if v is not None and not SAMPLE_CODE_PATTERN.match(v):
+        # fullmatch, not match: `^...$` + match would accept a trailing "\n"
+        # (that `\n` then reaches write_bytes and crashes) — SEC-1 requires
+        # the whole string to be filename-safe.
+        if v is not None and not SAMPLE_CODE_PATTERN.fullmatch(v):
             raise ValueError(
                 "sample_code must match ^[A-Za-z0-9._-]{1,64}$"
             )
