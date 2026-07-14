@@ -1,5 +1,11 @@
 # Web & Backend Plan — Aqua Scope
 
+> ⚠️ **ĐÃ GỘP (superseded) 2026-07-14.** Tài liệu này (spec+plan gộp) nay là **lịch sử**. Nguồn sự thật mới, tách đôi theo chuẩn superpowers:
+> - SPEC: `docs/superpowers/specs/2026-07-14-web-system-design.md` (cái gì/tại sao + hợp đồng + fixes an ninh)
+> - PLAN: `docs/superpowers/plans/2026-07-14-web-system-plan.md` (lộ trình + module + verify)
+>
+> Giữ lại để tra cứu bối cảnh; đừng sửa file này nữa — sửa cặp SPEC/PLAN.
+
 > **Phạm vi tài liệu này:** chỉ bàn phần **web + backend** (dashboard truy xuất nguồn gốc / traceability).
 > Phần CV/classifier chạy on-device xem `ai_model_plan.md`; phần cơ khí/quang học xem `README.md`, `plan.md`.
 > Liên quan: `CLAUDE.md` §"Application context", §"Operating cycle", memory `firmware-easytarget-port`.

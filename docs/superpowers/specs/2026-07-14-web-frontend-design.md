@@ -1,5 +1,7 @@
 # Thiết kế Frontend — Aqua Scope QC Dashboard
 
+> ⚠️ **ĐÃ GỘP (superseded) 2026-07-14.** Nội dung frontend này đã được fold vào SPEC hệ thống: `docs/superpowers/specs/2026-07-14-web-system-design.md` §7. Giữ lại để tra lịch sử; đừng sửa file này — sửa SPEC hệ thống.
+
 > **Phạm vi:** thiết kế UI/UX tầng frontend (thị giác + tương tác) cho dashboard traceability của Aqua Scope.
 > Đây là phần mà `web_plan.md` §5 còn thiếu — §5 mô tả *chức năng*, tài liệu này bổ sung *thiết kế thị giác thực thụ*.
 > **Không thay đổi** kiến trúc backend/data-contract đã chốt ở `web_plan.md` §1–§4, §9 (những phần đó đã trên chuẩn).
