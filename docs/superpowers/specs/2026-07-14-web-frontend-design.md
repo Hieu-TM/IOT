@@ -205,6 +205,6 @@ Cách xử lý gọn nhất, **không phá `web_plan.md`**:
 
 ## 8. Việc chưa chốt / cần xác nhận khi bắt đầu code frontend
 
-- Giá trị default của ngưỡng cảnh báo `WARN_PARTICLE_COUNT` (§1.4) — chọn con số hợp lý khi code, dễ đổi.
-- Class list cuối cùng (`ai_model_plan.md`) — bảng màu §1.2 định nghĩa 1 chỗ, thêm nhãn không phải sửa nhiều nơi.
-- Tốc độ/độ dày hạt mặc định của `stream_sim.js` — tinh chỉnh cho "đẹp mắt khi trình chiếu" lúc code.
+- Giá trị default của ngưỡng cảnh báo `WARN_PARTICLE_COUNT` (§1.4) — chọn con số hợp lý khi code, dễ đổi.(chưa cần set, sẽ mặc định là có hạt xuất hiện sẽ hiện cảnh báo)
+- Class list cuối cùng (`ai_model_plan.md`) — bảng màu §1.2 định nghĩa 1 chỗ, thêm nhãn không phải sửa nhiều nơi.(sẽ có 4 nhãn: plastic, bubble, organic, fiber)
+- Tốc độ/độ dày hạt mặc định của `stream_sim.js` — tinh chỉnh cho "đẹp mắt khi trình chiếu" lúc code.(sẽ tinh chỉnh sau)

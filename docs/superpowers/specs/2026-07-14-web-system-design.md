@@ -220,7 +220,7 @@ Theo đúng phong cách các file backend hiện có (là exemplar): module docs
 6. Dừng/chạy lại uvicorn → dữ liệu còn; không có đường sửa/xoá.
 
 ## 14. Open questions
-- Giá trị default `WARN_PARTICLE_COUNT` (ngưỡng cảnh báo) — chọn hợp lý khi code, dễ đổi.
-- Class list cuối (`ai_model_plan.md`) — không enum hoá để tránh migrate.
+- Giá trị default `WARN_PARTICLE_COUNT` (ngưỡng cảnh báo) — chọn hợp lý khi code, dễ đổi.(chưa cần set, sẽ mặc định là có hạt xuất hiện sẽ hiện cảnh báo)
+- Class list cuối (`ai_model_plan.md`) — không enum hoá để tránh migrate.(sẽ có 4 nhãn: plastic, bubble, organic, fiber)
 - Kích hoạt chu kỳ đo (tự động ESP32 vs nút web gọi ngược) — thuộc firmware Phase 6, chưa quyết ở đợt này.
-- `MAX_UPLOAD_BYTES` cụ thể (đề xuất 8MB) — xác nhận khi code.
+- `MAX_UPLOAD_BYTES` cụ thể (đề xuất 8MB) — xác nhận khi code.(sẽ tinh chỉnh sau)
