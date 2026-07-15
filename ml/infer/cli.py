@@ -44,8 +44,20 @@ def main(argv=None):
     source = FolderSource(args.input)
 
     created = already = failed = 0
+    collisions = 0
     failed_names = []
+    collision_names = []
+    seen_codes = {}  # sample_code -> first source_name this run
     for frame in source.frames():
+        prior = seen_codes.get(frame.sample_code)
+        if prior is not None:
+            collisions += 1
+            collision_names.append(
+                f"{frame.source_name} collides with {prior} (both -> {frame.sample_code})")
+            print(f"[warn] collision: {frame.source_name} -> {frame.sample_code} "
+                  f"(already used by {prior}); not sent. Rename the file to store it.")
+            continue
+        seen_codes[frame.sample_code] = frame.source_name
         try:
             result = detector.run(frame.image_bytes)
             metadata = build_metadata(
@@ -78,12 +90,19 @@ def main(argv=None):
             failed_names.append(f"{frame.source_name} ({exc})")
             print(f"[failed] {frame.source_name}: {exc}")
 
-    print(f"\nSummary: {created} created, {already} already_exists, {failed} failed")
+    summary = f"\nSummary: {created} created, {already} already_exists, {failed} failed"
+    if collisions:
+        summary += f", {collisions} collisions (not sent)"
+    print(summary)
     if failed_names:
         print("Failed:")
         for n in failed_names:
             print(f"  - {n}")
-    return 1 if failed else 0
+    if collision_names:
+        print("Collisions (rename to store):")
+        for n in collision_names:
+            print(f"  - {n}")
+    return 1 if (failed or collisions) else 0
 
 
 if __name__ == "__main__":
