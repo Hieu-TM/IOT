@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · Aqua Scope</title>
+  {# Apply the persisted theme before first paint to avoid a flash. #}
+  <script>
+    try {
+      var t = localStorage.getItem('aquascope-theme');
+      if (t) document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
+  </script>
+  {# No external webfont/CDN — the dashboard runs on an offline LAN. Archivo is
+     used if installed locally; otherwise the system-ui stack takes over. #}
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+{% from "_macros.html" import icon %}
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+        <rect x="0" y="0" width="34" height="34" rx="9" fill="var(--teal)"/>
+        <circle cx="17" cy="17" r="9.5" fill="none" stroke="#fff" stroke-opacity="0.55" stroke-width="1.6"/>
+        <circle cx="14.5" cy="15" r="3.1" fill="#0F3D2E"/>
+        <circle cx="20.5" cy="20" r="1.8" fill="#0F3D2E" fill-opacity="0.8"/>
+      </svg>
+      <span style="display:flex;flex-direction:column;line-height:1.15">
+        <span class="brand-name">Aqua Scope</span>
+        <span class="brand-sub">Bảng điều khiển QC</span>
+      </span>
+    </div>
+
+    <nav class="nav">
+      <a class="nav-link{{ ' active' if screen == 'dashboard' else '' }}" href="/">{{ icon('grid') }}<span>Bảng điều khiển</span></a>
+      <a class="nav-link{{ ' active' if screen == 'history' else '' }}" href="/history">{{ icon('list') }}<span>Lịch sử · audit</span></a>
+      <a class="nav-link{{ ' active' if screen == 'stream' else '' }}" href="/stream">{{ icon('wave') }}<span>Stream demo</span></a>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="device-status"><span class="device-dot"></span>aquascope-01 · trực tuyến</div>
+      <div class="sidebar-note">Dữ liệu chỉ đọc · append-only.<br>Không sửa, không xoá.</div>
+    </div>
+  </aside>
+
+  <div class="main-wrap">
+    <header class="header">
+      <h1 class="header-title">{{ title }}</h1>
+      <span class="lan-chip"><span class="lan-chip-dot"></span>LAN · demo</span>
+      <div class="spacer"></div>
+      <button id="theme-toggle" class="btn-icon" aria-label="Đổi giao diện sáng/tối" type="button">{{ icon('moon') }}</button>
+      <a class="btn btn-primary" href="/api/export.csv">{{ icon('download') }}<span>Xuất CSV</span></a>
+    </header>
+
+    {# Mobile-only nav: the sidebar is display:none ≤900px, so the links move
+       into this scrollable strip so navigation is never lost on phones. #}
+    <nav class="mobile-nav aq-scroll" aria-label="Điều hướng chính">
+      <a class="mnav-link{{ ' active' if screen == 'dashboard' else '' }}" href="/">{{ icon('grid') }}<span>Bảng điều khiển</span></a>
+      <a class="mnav-link{{ ' active' if screen == 'history' else '' }}" href="/history">{{ icon('list') }}<span>Lịch sử · audit</span></a>
+      <a class="mnav-link{{ ' active' if screen == 'stream' else '' }}" href="/stream">{{ icon('wave') }}<span>Stream demo</span></a>
+    </nav>
+
+    <main class="main aq-scroll">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+<script src="/static/js/theme.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

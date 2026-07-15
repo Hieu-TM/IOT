@@ -31,6 +31,12 @@ CLASS_LIST = ["plastic", "bubble", "organic", "fiber", "unknown"]
 # (backend only stores the final label — §2.1).
 CONFIDENCE_THRESHOLD = 0.5
 
+# QC warning threshold (frontend design §1.4): a sample shows the amber
+# "Cảnh báo" status when particle_count > this value. Default 0 → any detected
+# particle is a warning (the agreed default when no QC criterion is fixed yet,
+# frontend-design §8). One place to change, never hard-coded in a template.
+WARN_PARTICLE_COUNT = 0
+
 # SEC-3 (SPEC §6): reject uploads above this size (413) before buffering the
 # whole body into RAM.
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024  # 8 MiB

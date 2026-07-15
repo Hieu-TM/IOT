@@ -19,12 +19,16 @@ def test_create_db_and_tables_makes_exactly_two_tables():
 
 
 def test_root_endpoint_does_not_crash():
+    # Once Module 5/6 wired the pages router, `/` serves the dashboard HTML
+    # (not the old JSON placeholder). Smoke intent is unchanged: root renders
+    # without crashing whether or not the DB has samples yet.
     from fastapi.testclient import TestClient
 
     with TestClient(app) as client:  # triggers lifespan startup too
         resp = client.get("/")
     assert resp.status_code == 200
-    assert resp.json()["status"] == "ok"
+    assert "text/html" in resp.headers["content-type"]
+    assert "Aqua Scope" in resp.text
 
 
 def test_particle_has_sample_foreign_key():
