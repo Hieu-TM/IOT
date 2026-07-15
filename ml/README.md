@@ -46,6 +46,16 @@ ml/datasets/<version>/
   test/images, test/labels
 ```
 
+### Nơi đặt model weights
+- Weights train/tải từ Roboflow đặt tại **`ml/models/best.pt`** (thư mục `ml/models/`
+  do bạn tạo khi tải về). Các script/CLI trỏ tới đường này qua `--weights ml/models/best.pt`.
+- `ml/models/`, `ml/datasets/`, `runs/`, `*.pt`, `*.tflite` **đã được gitignore** — weights
+  và dataset **tái tạo được**, không commit (tránh phình repo).
+- Thay vào đó, ghi **nguồn** ở đây để ai cũng tải lại được:
+  - Roboflow project: `<workspace>/<project>` (điền sau khi tạo ở Phase A)
+  - Dataset version dùng để train: `v<N>`
+  - Base model: `yolo11n.pt` (hoặc model bạn chọn)
+
 ## Phase B — Train prototype trên PC
 
 ```bash
@@ -68,6 +78,11 @@ python ml/benchmark_tflite.py --model best_int8.tflite
 `benchmark_tflite.py` in ra: kích thước file (≈ flash cần), ước tính tensor arena,
 và latency/ảnh đo trên máy (chỉ là ước tính cận trên/dưới — thực tế trên ESP32-CAM sẽ
 chậm hơn nhiều vì không có AI accelerator như S3, cần cộng biên độ an toàn).
+
+**Hai nhánh deploy được tách chi tiết trong [deploy_options.md](deploy_options.md)**
+(Nhánh 1 = offload xử lý ra phần cứng ngoài, giữ nguyên size; Nhánh 2 = vẫn on-device
+trên ESP32-CAM nhưng tối ưu — FOMO+CV / tiling / two-stage / int8). Đọc file đó để
+chọn nhánh theo số đo Phase C.
 
 Quy tắc quyết định (đã ghi trong plan đã duyệt): nếu số đo cho thấy khả thi trên
 ESP32-CAM ở latency/flash/RAM chấp nhận được → giữ detector thật (có size từ box).

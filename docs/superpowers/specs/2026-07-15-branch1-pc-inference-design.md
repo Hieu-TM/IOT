@@ -23,7 +23,7 @@ Web backend **đã có sẵn** contract nhận kết quả: `POST /api/ingest`
 | Hạng mục | Quyết định |
 |---|---|
 | Nguồn ảnh | Folder trên PC (bây giờ) + ESP32 `/capture` (sau) — abstraction chuyển đổi được |
-| Model | Export weights `.pt` từ Roboflow, chạy local bằng Ultralytics (khớp `ml/` đã scaffold) |
+| Model | Export weights `.pt` từ Roboflow, chạy local bằng Ultralytics (khớp `ml/` đã scaffold). Đặt tại `ml/models/best.pt` (gitignore — tái tạo được, ghi nguồn Roboflow trong README) |
 | Đầu ra | POST `/api/ingest` của web backend đã có → tự lên dashboard Module 5+6 |
 | Cách chạy | CLI một phát: xử 1 ảnh hoặc cả folder rồi thoát |
 | Cấu trúc | Package phân lớp `ml/infer/` (5 unit lõi + `preview.py` phụ, test độc lập) |
@@ -123,7 +123,7 @@ sổ Pump-OFF của Stop-Flow → đó là đường `/capture`/folder, không p
 ## Verify end-to-end (bằng chứng thật)
 1. Dựng web backend local (`uvicorn app.main:app` ở [web/backend](../../../web/backend)).
 2. Có `best.pt` (Phase B) + vài ảnh test trong 1 folder.
-3. `python -m ml.infer <folder> --weights best.pt --api-url http://localhost:8000 --device-id pc-infer --px-per-mm <n>`.
+3. `python -m ml.infer <folder> --weights ml/models/best.pt --api-url http://localhost:8000 --device-id pc-infer --px-per-mm <n>`.
 4. Mở dashboard (Module 5+6) → sample mới xuất hiện, count/label/size hiển thị, ảnh xem được.
 5. **Chạy lại y hệt** → tất cả thành `already_exists`, dashboard **không** nhân đôi (chứng minh idempotent).
 
