@@ -89,6 +89,54 @@ ESP32-CAM ở latency/flash/RAM chấp nhận được → giữ detector thật
 Nếu không → chuyển hướng Edge Impulse FOMO cho ESP32-CAM, chấp nhận mất size
 per-particle (ghi rõ hạn chế này, không âm thầm bỏ qua).
 
+## Nhánh 1 — chạy inference trên PC (offload)
+
+Chạy detector đã train trên ảnh (folder/1 ảnh) rồi đẩy kết quả vào dashboard đã có.
+
+```bash
+pip install -r ml/requirements.txt
+# đặt weights tải từ Roboflow tại ml/models/best.pt
+python -m ml.infer <ảnh|folder> --weights ml/models/best.pt \
+    --api-url http://localhost:8000 --device-id pc-infer --px-per-mm <n>
+```
+- `--px-per-mm`: bỏ trống → dùng mặc định 14.0 kèm cảnh báo (size_mm chỉ là placeholder cho ảnh dataset).
+- `--dry-run`: chỉ detect + in số hạt, không POST.
+- Chạy lại cùng folder là idempotent (sample_code suy từ tên file) → server trả `already_exists`.
+
+Preview trực quan (chỉ để xem, KHÔNG ghi DB):
+```bash
+python -m ml.infer.preview --source webcam:0 --weights ml/models/best.pt --fps 2
+# hoặc --source http://<esp32-ip>/stream  |  --source video.mp4
+```
+
+### Kiểm thử end-to-end (thủ công, cần stack thật)
+
+Bước này cần `ml/models/best.pt` thật (tải từ Roboflow), package `ultralytics`
+cài được, và backend web đang chạy — **không** chạy được trong môi trường CI/agent
+không có các thứ đó; làm tay khi kiểm thử trên máy có đủ điều kiện.
+
+1. Chạy backend web:
+   ```bash
+   cd web/backend && python -m uvicorn app.main:app --reload
+   ```
+2. Đảm bảo `ml/models/best.pt` tồn tại (tải từ Roboflow) và chuẩn bị 2–3 ảnh test
+   trong một thư mục, ví dụ `ml/_e2e/`.
+3. Từ thư mục gốc repo, chạy:
+   ```bash
+   python -m ml.infer ml/_e2e --weights ml/models/best.pt \
+       --api-url http://localhost:8000 --device-id pc-infer --px-per-mm 14
+   ```
+   Kỳ vọng: mỗi ảnh in một dòng `[created] ... -> <code>` và cuối cùng
+   `Summary: N created, 0 already_exists, 0 failed`.
+4. Mở dashboard (`http://localhost:8000/`) và xác nhận các sample mới xuất hiện
+   đủ count/label/size và ảnh xem được.
+5. **Chạy lại đúng lệnh ở bước 3.** Kỳ vọng: mỗi dòng giờ là `[already_exists]`,
+   `Summary: 0 created, N already_exists, 0 failed`, và dashboard **không** có
+   sample trùng lặp.
+
+`ml/models/` và `ml/_e2e/` là thư mục cục bộ, không commit (`ml/models/` đã có
+trong `ml/.gitignore`; nếu tạo `ml/_e2e/` để test, nhớ không add nó vào git).
+
 ## Phase D — Sau này, khi rig chụp ảnh thật được
 
 Xem chi tiết trong plan đã duyệt (`~/.claude/plans/...`) — quay lại đúng project
