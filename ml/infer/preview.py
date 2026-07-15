@@ -22,6 +22,7 @@ from .detector import Detector
 
 
 def annotate_frame(frame_bgr, detections):
+    # cv2 imported inside function to allow `import ml.infer.preview` without opencv
     import cv2
 
     for d in detections:
@@ -54,15 +55,14 @@ def main(argv=None):
                    help="Max detector passes per second (throttle)")
     args = p.parse_args(argv)
 
-    detector = Detector(args.weights)
     cap = _open_capture(args.source)
-    if not cap.isOpened():
-        print(f"[error] cannot open source: {args.source}")
-        return 1
-
-    min_interval = 1.0 / args.fps if args.fps > 0 else 0.0
-    last = 0.0
     try:
+        if not cap.isOpened():
+            print(f"[error] cannot open source: {args.source}")
+            return 1
+        detector = Detector(args.weights)
+        min_interval = 1.0 / args.fps if args.fps > 0 else 0.0
+        last = 0.0
         while True:
             ok, frame = cap.read()
             if not ok:
@@ -76,10 +76,10 @@ def main(argv=None):
             cv2.imshow("Aqua Scope preview (not logged)", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
+        return 0
     finally:
         cap.release()
         cv2.destroyAllWindows()
-    return 0
 
 
 if __name__ == "__main__":
