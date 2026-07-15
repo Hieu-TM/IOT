@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, status_chip, empty_state, note %}
+{% block content %}
+<div class="page stack" style="gap:16px">
+
+  <form class="filter-bar" method="get" action="/history">
+    <label class="field">Từ ngày
+      <input type="date" name="from" value="{{ filters.from }}" onchange="this.form.submit()">
+    </label>
+    <label class="field">Đến ngày
+      <input type="date" name="to" value="{{ filters.to }}" onchange="this.form.submit()">
+    </label>
+    <label class="field">Mã lô
+      <select name="batch_lot" onchange="this.form.submit()">
+        <option value=""{{ ' selected' if not filters.lot else '' }}>Tất cả lô</option>
+        {% for lot in lot_options %}
+        <option value="{{ lot }}"{{ ' selected' if filters.lot == lot else '' }}>{{ lot }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <a class="btn-ghost" href="/history">Xoá lọc</a>
+    <div class="spacer"></div>
+    <a class="btn btn-teal-soft" href="/api/export.csv{{ export_qs }}">{{ icon('download') }}<span>Xuất CSV (theo bộ lọc)</span></a>
+  </form>
+
+  <div class="result-summary">{{ summary }}</div>
+
+  {% if empty %}
+    {{ empty_state('Không có kết quả', 'Không có mẫu khớp bộ lọc hiện tại. Thử nới rộng khoảng ngày hoặc bỏ chọn mã lô.') }}
+  {% else %}
+  <div class="card table-wrap aq-scroll">
+    <table class="table" style="min-width:820px">
+      <thead>
+        <tr>
+          <th>Mã mẫu</th>
+          <th>Mã lô</th>
+          <th>Thời gian chụp</th>
+          <th class="num">Số hạt</th>
+          <th>Phân bố loại</th>
+          <th>Trạng thái</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="mono">{{ r.code }}</td>
+          <td class="muted">{{ r.lot }}</td>
+          <td class="muted">{{ r.time }}</td>
+          <td class="num" style="font-weight:500">{{ r.count }}</td>
+          <td>
+            {% if r.dist %}
+            <span class="dist-chips">
+              {% for c in r.dist %}<span class="dist-chip" title="{{ c.vi }}"><span class="swatch-xs" style="background:{{ c.color }}"></span>{{ c.count }}</span>{% endfor %}
+            </span>
+            {% else %}<span class="muted-dash">—</span>{% endif %}
+          </td>
+          <td>{{ status_chip(r.warn) }}</td>
+          <td class="num"><a href="/samples/{{ r.id }}" class="link-cell">Chi tiết →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pager">
+    <span class="pager-label">Trang {{ page }} / {{ total_pages }}</span>
+    {% if has_prev %}<a class="btn btn-ghost" href="/history{{ prev_qs }}">‹ Trước</a>{% else %}<span class="btn btn-ghost" aria-disabled="true">‹ Trước</span>{% endif %}
+    {% if has_next %}<a class="btn btn-ghost" href="/history{{ next_qs }}">Sau ›</a>{% else %}<span class="btn btn-ghost" aria-disabled="true">Sau ›</span>{% endif %}
+  </div>
+  {% endif %}
+
+  {{ note([
+    'Dense rows với viền ngang mảnh, không bọc card từng dòng — tối ưu quét nhanh nhiều bản ghi audit.',
+    'Không có nút sửa/xoá ở bất kỳ đâu: dữ liệu append-only, backend cũng không có route PUT/PATCH/DELETE.',
+    'Nút "Xuất CSV" mang theo đúng bộ lọc đang chọn (khoảng ngày + mã lô). Mobile: bảng cuộn ngang trong khung riêng.',
+  ]) }}
+</div>
+{% endblock %}

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, status_chip, empty_state, note %}
+{% block content %}
+{% if empty %}
+  {{ empty_state('Chưa có mẫu nào', 'Chạy mock_sender.py để nạp dữ liệu demo, hoặc bật trạm aquascope-01 để bắt đầu ghi mẫu.') }}
+{% else %}
+<div class="page stack" style="gap:20px">
+
+  <div class="metric-grid">
+    {% for m in metric_tiles %}
+    <div class="tile{{ ' warn' if m.warn else '' }}">
+      <div class="tile-label">{{ icon(m.icon) }}<span>{{ m.label }}</span></div>
+      <div class="tile-value {{ m.value_class|default('') }}">{{ m.value }}</div>
+      <div class="tile-hint">{{ m.hint }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="grid-2">
+    <section class="card">
+      <div class="card-head">
+        <h2 class="card-title">Mẫu mới nhất</h2>
+        {{ status_chip(latest.warn) }}
+        <div class="spacer"></div>
+        <a href="/samples/{{ latest.id }}" class="link-cell">Xem chi tiết →</a>
+      </div>
+      <div style="display:flex;gap:18px;padding:18px;flex-wrap:wrap">
+        <div style="flex:1;min-width:240px">
+          <div class="bbox-figure" data-particles="latest-parts" data-imgw="{{ latest.image_width }}" data-imgh="{{ latest.image_height }}" data-labels="0">
+            <img src="{{ latest.image_url }}" alt="Ảnh backlit mẫu mới nhất, {{ latest.count }} hạt" loading="lazy">
+          </div>
+          <script type="application/json" id="latest-parts">{{ latest.particles_json|safe }}</script>
+        </div>
+        <div style="flex:1;min-width:210px;align-self:center">
+          <div class="meta-list">
+            <div class="meta-row"><span class="meta-k">Mã mẫu</span><span class="meta-v mono">{{ latest.code }}</span></div>
+            <div class="meta-row"><span class="meta-k">Mã lô</span><span class="meta-v mono">{{ latest.lot }}</span></div>
+            <div class="meta-row"><span class="meta-k">Giờ chụp</span><span class="meta-v">{{ latest.time }}</span></div>
+            <div class="meta-row"><span class="meta-k">Số hạt</span><span class="meta-v">{{ latest.count }}</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-pad" style="border-bottom:1px solid var(--border)">
+        <h2 class="card-title">Phân bố loại</h2>
+        <p class="card-sub" style="margin:3px 0 0">Tổng hợp các mẫu hôm nay</p>
+      </div>
+      <div style="display:flex;align-items:center;gap:20px;padding:18px;flex-wrap:wrap">
+        <div class="donut-wrap">
+          <svg viewBox="0 0 {{ donut.size }} {{ donut.size }}" width="100%" height="100%" role="img" aria-label="Biểu đồ phân bố loại hạt">
+            <circle cx="{{ donut.c }}" cy="{{ donut.c }}" r="{{ donut.rr }}" fill="none" style="stroke:var(--surface-1)" stroke-width="{{ donut.sw }}"/>
+            {% for s in donut.segs %}
+            <circle cx="{{ donut.c }}" cy="{{ donut.c }}" r="{{ donut.rr }}" fill="none" style="stroke:{{ s.color }}" stroke-width="{{ donut.sw }}" stroke-dasharray="{{ s.len }} {{ s.gap }}" stroke-dashoffset="{{ s.offset }}" transform="rotate(-90 {{ donut.c }} {{ donut.c }})" stroke-linecap="butt"/>
+            {% endfor %}
+          </svg>
+          <div class="donut-center">
+            <span class="donut-total">{{ donut_total }}</span>
+            <span class="donut-unit">hạt</span>
+          </div>
+        </div>
+        <div class="legend-list">
+          {% for l in donut_legend %}
+          <div class="legend-row">
+            <span class="swatch" style="background:{{ l.color }}"></span>
+            <span class="name">{{ l.vi }}</span>
+            <span class="pct">{{ l.pct }}</span>
+          </div>
+          {% else %}
+          <span class="hint-caption">Chưa có hạt nào hôm nay.</span>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="card">
+    <div class="card-head">
+      <h2 class="card-title">5 mẫu gần nhất</h2>
+      <div class="spacer"></div>
+      <a href="/history" style="color:var(--teal-text);font-size:12.5px;font-weight:500">Xem tất cả (lịch sử / audit) →</a>
+    </div>
+    <div class="table-wrap aq-scroll">
+      <table class="table mini" style="min-width:640px">
+        <thead><tr>
+          <th>Mã mẫu</th><th>Mã lô</th><th>Giờ chụp</th><th class="num">Số hạt</th><th>Trạng thái</th>
+        </tr></thead>
+        <tbody>
+          {% for r in recent5 %}
+          <tr class="clickable" onclick="location.href='/samples/{{ r.id }}'">
+            <td class="mono">{{ r.code }}</td>
+            <td class="muted">{{ r.lot }}</td>
+            <td class="muted">{{ r.time }}</td>
+            <td class="num" style="font-weight:500">{{ r.count }}</td>
+            <td>{{ status_chip(r.warn) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="muted" style="text-align:center;padding:24px">Chưa có mẫu nào hôm nay.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {{ note([
+    'Bố cục lưới module cân bằng: 4 metric tile ở trên cho tổng quan ca, hàng 2 cột (1.5fr / 1fr) đặt "mẫu mới nhất" cạnh "phân bố loại" để mắt đọc từ tổng quan → gần nhất → chi tiết.',
+    'Thẻ Cảnh báo đổi nền amber khi >0 để nổi bật lúc trình chiếu từ xa; các tile khác giữ nền xám trung tính.',
+    'Mobile (≤900px): lưới 2 cột gập thành 1 cột xếp dọc; bảng "5 mẫu gần nhất" cuộn ngang trong khung riêng, thân trang không cuộn ngang.',
+  ]) }}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/bbox_overlay.js"></script>
+{% endblock %}

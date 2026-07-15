@@ -5,3 +5,6 @@ build/
 bin/
 out/
 *.local
+
+# Web backend runtime data (SQLite DB + captured/mock images) — not committed
+web/backend/data/

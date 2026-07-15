@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, note %}
+{% block content %}
+<div class="page stack" style="gap:16px">
+
+  <div class="demo-banner">
+    <span style="flex:none;color:var(--amber-text);margin-top:1px">{{ icon('warn') }}</span>
+    <div>
+      <div class="b-title">Chế độ demo — mô phỏng, không ghi vào lịch sử.</div>
+      <div class="b-sub">Đây không phải detection thật và không phải bản ghi audit. Dùng để trình chiếu dòng chảy backlit.</div>
+    </div>
+  </div>
+
+  <section class="card">
+    <div class="stream-stage">
+      <canvas id="stream-canvas" class="stream-canvas"></canvas>
+      <div class="stream-hud">
+        <div class="hud-card">
+          <div class="hud-metric"><span class="k">Đang thấy</span><span class="v" id="hud-count">0</span></div>
+          <div class="hud-sep"></div>
+          <div class="hud-metric"><span class="k">FPS</span><span class="v" id="hud-fps">0</span></div>
+        </div>
+        <div class="hud-pill"><div id="hud-dist"><span class="hud-empty">Chưa có hạt trong khung</span></div></div>
+      </div>
+      <div class="pause-overlay" id="pause-overlay" hidden>
+        <span class="pause-pill">Đã tạm dừng · nhấn Bật stream</span>
+      </div>
+    </div>
+    <div class="stream-toolbar">
+      <button type="button" id="stream-toggle" class="btn stream-btn">
+        <span id="stream-icon">{{ icon('wave') }}</span><span id="stream-label">Bật stream</span>
+      </button>
+      <button type="button" id="det-toggle" class="switch-btn">
+        <span class="switch" id="det-switch"><span class="knob"></span></span>Hiện detection
+      </button>
+      <div class="spacer"></div>
+      <label class="speed-field">Tốc độ
+        <input type="range" id="speed" min="0.4" max="3" step="0.1" value="1.4">
+        <span class="speed-val" id="speed-val">1.4×</span>
+      </label>
+    </div>
+  </section>
+
+  {{ note([
+    'Thuần frontend (canvas + vanilla JS): mô phỏng dòng chảy backlit, không gọi backend, không ghi DB — bảo toàn nguyên tắc append-only.',
+    'Toggle "Hiện detection" cho phép cú "reveal" khi trình chiếu: bật stream thấy dòng chảy, gạt detection thì bbox màu theo loại hiện đè lên.',
+    'Dùng đúng bảng màu nhãn và hệ số 14 px/mm như mock_sender để stream và ảnh tĩnh trông cùng một hệ. Điểm mở rộng: thay nền canvas bằng MJPEG thật của ESP32.',
+  ]) }}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/stream_sim.js"></script>
+{% endblock %}
