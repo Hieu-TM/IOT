@@ -132,13 +132,16 @@ def test_run_converts_center_bbox_to_top_left(monkeypatch):
 def test_run_handles_multiple_predictions(monkeypatch):
     payload = [{"out": [
         {"x": 10, "y": 10, "width": 4, "height": 4, "class": "fiber", "confidence": 0.5},
-        {"x": 50, "y": 60, "width": 10, "height": 20, "class": "film", "confidence": 0.9}]}]
+        # Both boxes must lie INSIDE the 64x48 test image: an out-of-frame box is
+        # dropped by design (see test_run_drops_box_entirely_outside_image), which
+        # is not what this test is about.
+        {"x": 50, "y": 30, "width": 10, "height": 20, "class": "film", "confidence": 0.9}]}]
     monkeypatch.setattr(rfmod.requests, "post",
                         lambda url, json=None, timeout=None: _Resp(payload))
 
     result = _detector().run(_jpeg_bytes())
 
-    assert [d.bbox_xywh for d in result.detections] == [(8, 8, 4, 4), (45, 50, 10, 20)]
+    assert [d.bbox_xywh for d in result.detections] == [(8, 8, 4, 4), (45, 20, 10, 20)]
     assert [d.class_name for d in result.detections] == ["fiber", "film"]
 
 

@@ -17,7 +17,7 @@ backend = "local"
 api_url = "http://localhost:8000"   # backend web nhan ket qua
 device_id = "pc-infer"              # ghi vao ban ghi audit
 # batch_lot = "LOT-001"             # tuy chon: ma lo san xuat
-timeout_s = 30                      # thoi gian cho (giay)
+timeout_s = 30                      # thoi gian cho (giay) - CHUA duoc dung, danh cho sau nay
 
 [calibration]
 # CO Y DE TRONG. Chua set => CLI se in canh bao "size_mm la PLACEHOLDER,
