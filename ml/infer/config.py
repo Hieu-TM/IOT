@@ -75,6 +75,13 @@ DEFAULTS = {
 DEFAULT_CONFIG_PATH = Path("ml/config.toml")
 LOCAL_CONFIG_NAME = "config.local.toml"
 
+# Keys whose DEFAULTS value is None carry no type to infer from, so declare it
+# explicitly here. Anything not listed stays a string (e.g. ingest.batch_lot, where
+# a lot code like "123" must NOT become a number).
+_NONE_DEFAULT_TYPES = {
+    ("calibration", "px_per_mm"): float,
+}
+
 
 def _deep_merge(base, override):
     out = {section: dict(values) for section, values in base.items()}
@@ -97,6 +104,9 @@ def _coerce(section, key, value):
     if not isinstance(value, str):
         return value
     default = DEFAULTS.get(section, {}).get(key)
+    if default is None:
+        caster = _NONE_DEFAULT_TYPES.get((section, key))
+        return caster(value) if caster else value
     if isinstance(default, bool):
         return value.strip().lower() in ("1", "true", "yes", "on")
     if isinstance(default, int) and not isinstance(default, bool):

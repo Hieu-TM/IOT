@@ -17,7 +17,7 @@ backend = "local"
 api_url = "http://localhost:8000"   # backend web nhan ket qua
 device_id = "pc-infer"              # ghi vao ban ghi audit
 # batch_lot = "LOT-001"             # tuy chon: ma lo san xuat
-timeout_s = 30
+timeout_s = 30                      # thoi gian cho (giay)
 
 [calibration]
 # CO Y DE TRONG. Chua set => CLI se in canh bao "size_mm la PLACEHOLDER,
@@ -26,14 +26,14 @@ timeout_s = 30
 
 [local]
 # Huong 1 - weights tu train. Tao ra bang: python -m ml.train.train_detector
-weights = "ml/models/best.pt"
-confidence = 0.25
+weights = "ml/models/best.pt"       # duong dan den file model .pt
+confidence = 0.25                   # nguong tin cay - CHUA duoc dung, danh cho sau nay
 
 [roboflow]
 # Huong 2 - hosted Workflow API. KHONG dien api_key vao day (file nay duoc commit).
 # Dat trong ml/config.local.toml hoac: export AQUA_ROBOFLOW_API_KEY=...
 api_key = ""
-endpoint = "https://serverless.roboflow.com"
+endpoint = "https://serverless.roboflow.com"  # URL diem cuoi API Roboflow
 workspace = ""                      # workspace slug, lay tu URL workflow cua ban
 workflow_id = ""                    # workflow SLUG (khong phai document id)
 image_input_name = "image"          # ten input anh ma workflow khai bao
@@ -42,24 +42,24 @@ image_input_name = "image"          # ten input anh ma workflow khai bao
 #   python -m ml.infer.probe <anh.jpg>
 # roi dien ten khoa vao day, vd "model_predictions" hoac "model_predictions.predictions"
 predictions_key = ""
-confidence = 0.5
-timeout_s = 30
-retries = 2
+confidence = 0.5                    # nguong tin cay - CHUA duoc dung, danh cho sau nay
+timeout_s = 30                      # thoi gian cho goi API (giay)
+retries = 2                         # so lan thu lai khi loi
 
 [dataset]
 # Huong 1 - tai dataset ve de tu train (weights KHONG tai duoc, nhung dataset thi duoc)
-workspace = "iam"
-project = "microplastics-m7mf5"
-version = 1
-format = "yolov11"
-out_dir = "ml/datasets"
+workspace = "iam"                   # workspace Roboflow chua dataset
+project = "microplastics-m7mf5"     # ten du an trong workspace
+version = 1                         # phien ban dataset can tai
+format = "yolov11"                  # dinh dang dataset (yolov11)
+out_dir = "ml/datasets"             # thu muc luu dataset tren may nay
 
 [train]
-base_model = "yolo11n.pt"
-epochs = 100
-imgsz = 416
-batch = 16
+base_model = "yolo11n.pt"           # mo hinh goc can tai ve de fine-tune
+epochs = 100                        # so vong hoc
+imgsz = 416                         # kich thuoc anh nhap (pixel)
+batch = 16                          # kich thuoc lo hang
 
 [export]
 tflite_imgsz = 192                  # nho nhat ma van phan giai duoc hat ~2mm
-int8 = true
+int8 = true                         # lam luong tu 8 bit de giam kich thuoc mo hinh

@@ -104,3 +104,17 @@ def test_missing_for_rejects_unknown_backend(tmp_path):
     cfg = cfgmod.load(tmp_path / "missing.toml", env={})
     problems = cfg.missing_for("bogus")
     assert any("bogus" in p for p in problems)
+
+
+def test_env_coerces_none_default_px_per_mm_to_float(tmp_path):
+    cfg = cfgmod.load(tmp_path / "missing.toml",
+                      env={"AQUA_CALIBRATION_PX_PER_MM": "14.0"})
+    assert cfg.get("calibration", "px_per_mm") == 14.0
+    assert isinstance(cfg.get("calibration", "px_per_mm"), float)
+
+
+def test_env_leaves_batch_lot_as_string(tmp_path):
+    cfg = cfgmod.load(tmp_path / "missing.toml",
+                      env={"AQUA_INGEST_BATCH_LOT": "123"})
+    assert cfg.get("ingest", "batch_lot") == "123"
+    assert isinstance(cfg.get("ingest", "batch_lot"), str)
