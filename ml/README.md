@@ -89,41 +89,112 @@ ESP32-CAM ở latency/flash/RAM chấp nhận được → giữ detector thật
 Nếu không → chuyển hướng Edge Impulse FOMO cho ESP32-CAM, chấp nhận mất size
 per-particle (ghi rõ hạn chế này, không âm thầm bỏ qua).
 
-## Nhánh 1 — chạy inference trên PC (offload)
+## Hai hướng model (2 backend, cùng một pipeline)
 
-Chạy detector đã train trên ảnh (folder/1 ảnh) rồi đẩy kết quả vào dashboard đã có.
+Cùng dùng chung `ml/infer/` (source → detector → mapper → ingest). Chỉ khác ở
+tầng detector, chọn bằng `--backend`:
+
+| | Hướng 1 — `local` | Hướng 2 — `roboflow` |
+|---|---|---|
+| Trạng thái | Chưa làm (hoãn) | **Đã làm xong** |
+| Weights local | Cần (tự train ra) | Không cần |
+| Mạng khi chạy | Không | Có (+ API key) |
+| Xuống chip (TFLite) | **Được** | Không |
+| Chạy được ngay | Sau khi train | Ngay |
+
+### Cấu hình tập trung
+
+Mọi thiết lập nằm ở **`ml/config.toml`** (được commit, tài liệu hoá đầy đủ mọi
+khoá — mở file này ra là biết cần cấu hình gì).
+
+Thứ tự ưu tiên: `cờ CLI` > `biến môi trường` > `ml/config.local.toml` > `ml/config.toml` > mặc định trong code.
+
+API key **không bao giờ** để trong `config.toml`. Tạo `ml/config.local.toml` (đã gitignore):
+```toml
+[roboflow]
+api_key = "rf_xxxxxxxx"
+workspace = "<workspace-slug>"
+workflow_id = "<workflow-slug>"
+```
+Hoặc dùng biến môi trường: `AQUA_ROBOFLOW_API_KEY`, `AQUA_ROBOFLOW_WORKSPACE`, `AQUA_INGEST_API_URL`, ...
+
+Kiểm tra cấu hình đã đủ chưa (không chạy inference, **không in ra API key**):
+```bash
+python -m ml.infer --check-config
+python -m ml.infer --check-config --backend roboflow
+```
+
+### Hướng 2 — Roboflow Workflow API (đã làm xong)
 
 ```bash
-pip install -r ml/requirements.txt
-# đặt weights tải từ Roboflow tại ml/models/best.pt
-python -m ml.infer <ảnh|folder> --weights ml/models/best.pt \
-    --api-url http://localhost:8000 --device-id pc-infer --px-per-mm <n>
+python -m ml.infer <ảnh|thư mục> --backend roboflow --px-per-mm <n>
 ```
-- `--px-per-mm`: bỏ trống → dùng mặc định 14.0 kèm cảnh báo (size_mm chỉ là placeholder cho ảnh dataset).
-- `--dry-run`: chỉ detect + in số hạt, không POST.
-- Chạy lại cùng folder là idempotent (sample_code suy từ tên file) → server trả `already_exists`.
+Không cần weights, không cần ultralytics. Cần mạng + `roboflow.api_key` + `workspace` + `workflow_id`.
 
-Preview trực quan (chỉ để xem, KHÔNG ghi DB):
+**Bước bắt buộc lần đầu — dò tên output của workflow.** Response của Workflow API là
+một *list*, mỗi phần tử là dict khoá theo **tên output do chính workflow đặt** (không có
+khoá `predictions` cố định). Chạy lệnh probe một lần để xem cấu trúc thật (chỉ in tên
+khoá + kiểu, **không in blob base64**):
+```bash
+python -m ml.infer.probe path/to/anh.jpg
+```
+Rồi điền tên khoá vừa thấy vào `roboflow.predictions_key` trong `ml/config.toml`
+(hỗ trợ đường dẫn có dấu chấm, vd `model_predictions.predictions`). Để trống thì
+code sẽ **tự dò** — probe sẽ cho biết tự dò có ra hay không.
+
+### Hướng 1 — tự train (CHƯA LÀM)
+
+Roboflow bản miễn phí **không cho tải weights** đã train trên nền tảng họ, nhưng
+**cho tải dataset**. Hướng này tải dataset về, tự train, sở hữu luôn `.pt` — và là
+đường **duy nhất** đi tiếp xuống chip (TFLite).
+
+Phần này chưa triển khai (Task 5 + 6 trong plan, đang hoãn). Backend `local` trong
+CLI đã sẵn sàng nhận `ml/models/best.pt` khi có weights:
+```bash
+python -m ml.infer <ảnh|thư mục> --backend local --weights ml/models/best.pt --px-per-mm <n>
+# hoặc bỏ --backend / --weights nếu ml/config.toml đã set general.backend="local"
+# và local.weights đúng đường dẫn (mặc định sẵn là ml/models/best.pt)
+```
+Phase A–C ở trên (fork dataset Roboflow → train → export TFLite) mô tả cách tạo ra
+`ml/models/best.pt` này khi hướng 1 được triển khai thật.
+
+### Ghi chú chung
+
+- `--px-per-mm` bỏ trống → dùng mặc định 14.0 **kèm cảnh báo**: `size_mm` chỉ là
+  placeholder, không phải hiệu chuẩn thật (với ảnh dataset công khai thì đúng là vậy).
+- `--dry-run`: chỉ detect + in số hạt, không POST.
+- Chạy lại cùng thư mục là idempotent (sample_code suy từ tên file) → server trả `already_exists`.
+- Hai file khác nhau ra cùng `sample_code` (vd `a.jpg` và `a.png`) sẽ bị báo
+  `[warn] collision` và **không gửi** — đổi tên file rồi chạy lại.
+
+Preview trực quan (chỉ backend `local`, KHÔNG ghi DB):
 ```bash
 python -m ml.infer.preview --source webcam:0 --weights ml/models/best.pt --fps 2
 # hoặc --source http://<esp32-ip>/stream  |  --source video.mp4
 ```
+Preview cố ý không dùng backend `roboflow`: gọi API mỗi khung hình sẽ rất tốn và dễ đụng rate limit.
 
-### Kiểm thử end-to-end (thủ công, cần stack thật)
+### Kiểm thử end-to-end (thủ công, cần stack thật — CHƯA chạy được ở đây)
 
-Bước này cần `ml/models/best.pt` thật (tải từ Roboflow), package `ultralytics`
-cài được, và backend web đang chạy — **không** chạy được trong môi trường CI/agent
-không có các thứ đó; làm tay khi kiểm thử trên máy có đủ điều kiện.
+Bước này cần backend đã sẵn sàng (`python -m ml.infer --check-config [--backend ...]`
+phải báo `Config OK`) và backend web đang chạy — **không** chạy được trong môi trường
+CI/agent hiện tại (không có `ml/models/best.pt` thật, không có API key Roboflow thật,
+không có mạng ra ngoài); làm tay khi kiểm thử trên máy có đủ điều kiện. Kết quả dưới
+đây là **quy trình dự kiến**, không phải kết quả đã đo được.
 
 1. Chạy backend web:
    ```bash
    cd web/backend && python -m uvicorn app.main:app --reload
    ```
-2. Đảm bảo `ml/models/best.pt` tồn tại (tải từ Roboflow) và chuẩn bị 2–3 ảnh test
-   trong một thư mục, ví dụ `ml/_e2e/`.
-3. Từ thư mục gốc repo, chạy:
+2. Chuẩn bị stack cho backend muốn test:
+   - `local`: đảm bảo `ml/models/best.pt` tồn tại (tải/train từ Roboflow).
+   - `roboflow`: đảm bảo `ml/config.local.toml` (hoặc biến môi trường) đã có
+     `api_key` + `workspace` + `workflow_id` thật, và đã chạy `ml.infer.probe`
+     một lần để set `predictions_key`.
+   Chuẩn bị 2–3 ảnh test trong một thư mục, ví dụ `ml/_e2e/`.
+3. Từ thư mục gốc repo, chạy (ví dụ backend `roboflow`):
    ```bash
-   python -m ml.infer ml/_e2e --weights ml/models/best.pt \
+   python -m ml.infer ml/_e2e --backend roboflow \
        --api-url http://localhost:8000 --device-id pc-infer --px-per-mm 14
    ```
    Kỳ vọng: mỗi ảnh in một dòng `[created] ... -> <code>` và cuối cùng
