@@ -25,7 +25,9 @@ timeout_s = 30                      # thoi gian cho (giay)
 # px_per_mm = 14.0
 
 [local]
-# Huong 1 - weights tu train. Tao ra bang: python -m ml.train.train_detector
+# Huong 1 - weights tu train. Tao ra bang (xem README.md):
+#   pip install ultralytics
+#   python ml/train_detector.py --data ml/datasets/<version>/data.yaml --model yolo11n.pt
 weights = "ml/models/best.pt"       # duong dan den file model .pt
 confidence = 0.25                   # nguong tin cay - CHUA duoc dung, danh cho sau nay
 

@@ -165,7 +165,8 @@ class Config:
             if not weights or not Path(weights).is_file():
                 problems.append(
                     f"local.weights not found at {weights!r} - train first "
-                    "(python -m ml.train.train_detector) or set local.weights.")
+                    "(pip install ultralytics; then python ml/train_detector.py "
+                    "--data <data.yaml> --model yolo11n.pt) or set local.weights.")
         else:
             problems.append(
                 f"general.backend={backend!r} is not one of: local, roboflow")
