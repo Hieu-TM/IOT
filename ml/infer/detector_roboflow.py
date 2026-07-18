@@ -170,10 +170,20 @@ class RoboflowWorkflowDetector:
                 resp = requests.post(self.url, json=payload, timeout=self.timeout)
                 resp.raise_for_status()
                 return resp.json()
+            except requests.HTTPError as exc:
+                status = getattr(exc.response, "status_code", None)
+                # Permanent client errors (bad api_key, unknown workflow) will not
+                # fix themselves - fail fast rather than burn retries. 429 is the
+                # exception: a rate limit IS worth backing off on.
+                if status is not None and 400 <= status < 500 and status != 429:
+                    raise
+                last_error = exc
+                if attempt < self.retries:
+                    time.sleep(0.5 * (2 ** attempt))
             except requests.RequestException as exc:
                 last_error = exc
                 if attempt < self.retries:
-                    time.sleep(0.5 * (2 ** attempt))  # backoff
+                    time.sleep(0.5 * (2 ** attempt))
         raise last_error
 
     def run(self, image_bytes):
@@ -183,8 +193,16 @@ class RoboflowWorkflowDetector:
         entries = raw if isinstance(raw, list) else [raw]
         entry = entries[0] if entries else {}
         predictions = extract_predictions(entry, self.predictions_key)
+        detections = []
+        for pred in predictions:
+            try:
+                detections.append(_to_detection(pred))
+            except (KeyError, TypeError, ValueError):
+                # The workflow's output shape is not guaranteed - one malformed
+                # entry must not sink the whole frame.
+                continue
         return DetectionResult(
-            detections=[_to_detection(p) for p in predictions],
+            detections=detections,
             image_width=width,
             image_height=height,
         )

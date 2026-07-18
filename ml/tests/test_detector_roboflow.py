@@ -31,7 +31,7 @@ class _Resp:
 
     def raise_for_status(self):
         if self.status_code >= 400:
-            raise rfmod.requests.HTTPError(f"status {self.status_code}")
+            raise rfmod.requests.HTTPError(f"status {self.status_code}", response=self)
 
 
 # --- construction / validation -------------------------------------------
@@ -196,6 +196,68 @@ def test_run_raises_on_http_error(monkeypatch):
     monkeypatch.setattr(rfmod.time, "sleep", lambda s: None)
     with pytest.raises(rfmod.requests.HTTPError):
         _detector(retries=0).run(_jpeg_bytes())
+
+
+def test_run_does_not_retry_client_error(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_post(url, json=None, timeout=None):
+        calls["n"] += 1
+        return _Resp({}, code=403)
+
+    monkeypatch.setattr(rfmod.requests, "post", fake_post)
+    monkeypatch.setattr(rfmod.time, "sleep", lambda s: None)
+
+    with pytest.raises(rfmod.requests.HTTPError):
+        _detector(retries=3).run(_jpeg_bytes())
+
+    assert calls["n"] == 1   # a bad api_key fails fast, no retries
+
+
+def test_run_retries_server_error(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_post(url, json=None, timeout=None):
+        calls["n"] += 1
+        return _Resp({}, code=500)
+
+    monkeypatch.setattr(rfmod.requests, "post", fake_post)
+    monkeypatch.setattr(rfmod.time, "sleep", lambda s: None)
+
+    with pytest.raises(rfmod.requests.HTTPError):
+        _detector(retries=2).run(_jpeg_bytes())
+
+    assert calls["n"] == 3   # 5xx is transient -> retried
+
+
+def test_run_retries_rate_limit(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_post(url, json=None, timeout=None):
+        calls["n"] += 1
+        return _Resp({}, code=429)
+
+    monkeypatch.setattr(rfmod.requests, "post", fake_post)
+    monkeypatch.setattr(rfmod.time, "sleep", lambda s: None)
+
+    with pytest.raises(rfmod.requests.HTTPError):
+        _detector(retries=1).run(_jpeg_bytes())
+
+    assert calls["n"] == 2   # 429 IS worth backing off on
+
+
+def test_run_skips_malformed_predictions(monkeypatch):
+    payload = [{"out": [
+        {"x": 10, "y": 10, "width": 4, "height": 4, "class": "fiber", "confidence": 0.5},
+        {"not": "a bbox"},
+    ]}]
+    monkeypatch.setattr(rfmod.requests, "post",
+                        lambda url, json=None, timeout=None: _Resp(payload))
+
+    result = _detector().run(_jpeg_bytes())
+
+    assert len(result.detections) == 1
+    assert result.detections[0].class_name == "fiber"
 
 
 # --- probe summariser (must never emit blobs) ----------------------------
