@@ -8,6 +8,7 @@ Usage:
 import argparse
 import sys
 
+from . import config
 from .detector import Detector
 from .ingest_client import post
 from .mapper import build_metadata
@@ -18,13 +19,18 @@ from .source import FolderSource
 def build_arg_parser():
     p = argparse.ArgumentParser(
         prog="python -m ml.infer",
-        description="Run the Roboflow-trained detector on images and POST "
-                    "count/size/label to /api/ingest.",
+        description="Run the detector on images and POST count/size/label to "
+                    "/api/ingest. Settings come from ml/config.toml unless a "
+                    "flag overrides them.",
     )
-    p.add_argument("input", help="Image file or folder of images")
-    p.add_argument("--weights", default="ml/models/best.pt")
-    p.add_argument("--api-url", default="http://localhost:8000")
-    p.add_argument("--device-id", default="pc-infer")
+    p.add_argument("input", nargs="?", help="Image file or folder of images")
+    p.add_argument("--config", default=None,
+                   help="Path to config.toml (default: ml/config.toml)")
+    p.add_argument("--backend", choices=["local", "roboflow"], default=None,
+                   help="local = self-trained .pt; roboflow = hosted API")
+    p.add_argument("--weights", default=None)
+    p.add_argument("--api-url", default=None)
+    p.add_argument("--device-id", default=None)
     p.add_argument("--px-per-mm", type=float, default=None)
     p.add_argument("--batch-lot", default=None)
     p.add_argument("--dry-run", action="store_true",
@@ -34,13 +40,25 @@ def build_arg_parser():
 
 def main(argv=None):
     args = build_arg_parser().parse_args(argv)
+    cfg = config.load(args.config)
 
-    px, used_default = resolve_px_per_mm(args.px_per_mm)
+    if not args.input:
+        print("[error] missing input (image file or folder). See --help.")
+        return 2
+
+    api_url = args.api_url if args.api_url is not None else cfg.get("ingest", "api_url")
+    device_id = args.device_id if args.device_id is not None else cfg.get("ingest", "device_id")
+    batch_lot = args.batch_lot if args.batch_lot is not None else cfg.get("ingest", "batch_lot")
+    weights = args.weights if args.weights is not None else cfg.get("local", "weights")
+
+    px_setting = (args.px_per_mm if args.px_per_mm is not None
+                  else cfg.get("calibration", "px_per_mm"))
+    px, used_default = resolve_px_per_mm(px_setting)
     if used_default:
-        print(f"[warn] --px-per-mm not set; using default {px} px/mm. "
+        print(f"[warn] px_per_mm not set; using default {px} px/mm. "
               "size_mm is a PLACEHOLDER, not a real calibration.")
 
-    detector = Detector(args.weights)
+    detector = Detector(weights)
     source = FolderSource(args.input)
 
     created = already = failed = 0
@@ -66,15 +84,15 @@ def main(argv=None):
                 image_height=result.image_height,
                 sample_code=frame.sample_code,
                 captured_at=frame.captured_at,
-                device_id=args.device_id,
+                device_id=device_id,
                 px_per_mm=px,
-                batch_lot=args.batch_lot,
+                batch_lot=batch_lot,
             )
             if args.dry_run:
                 print(f"[dry-run] {frame.source_name}: "
                       f"{len(metadata['particles'])} particles")
                 continue
-            res = post(args.api_url, metadata, frame.image_bytes,
+            res = post(api_url, metadata, frame.image_bytes,
                        f"{frame.sample_code}.jpg")
             if res.status == "created":
                 created += 1
