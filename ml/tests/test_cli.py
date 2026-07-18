@@ -287,3 +287,17 @@ def test_backend_roboflow_builds_workflow_detector(tmp_path, monkeypatch):
     assert built["workspace"] == "ws"
     assert built["workflow_id"] == "wf"
     assert built["predictions_key"] == "out"
+
+
+def test_cli_reports_actionable_error_when_roboflow_unconfigured(tmp_path, capsys):
+    _jpeg(tmp_path / "a.jpg")
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('[general]\nbackend = "roboflow"\n', encoding="utf-8")
+
+    rc = cli.main([str(tmp_path), "--config", str(cfg_file), "--px-per-mm", "10"])
+    out = capsys.readouterr().out
+
+    assert rc == 2
+    assert "cannot start backend" in out
+    assert "api_key" in out
+    assert "--check-config" in out

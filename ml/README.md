@@ -104,6 +104,8 @@ tầng detector, chọn bằng `--backend`:
 
 ### Cấu hình tập trung
 
+Yeu cau Python 3.11+ (dung tomllib trong thu vien chuan).
+
 Mọi thiết lập nằm ở **`ml/config.toml`** (được commit, tài liệu hoá đầy đủ mọi
 khoá — mở file này ra là biết cần cấu hình gì).
 
@@ -127,9 +129,16 @@ python -m ml.infer --check-config --backend roboflow
 ### Hướng 2 — Roboflow Workflow API (đã làm xong)
 
 ```bash
+pip install requests pillow numpy
 python -m ml.infer <ảnh|thư mục> --backend roboflow --px-per-mm <n>
 ```
 Không cần weights, không cần ultralytics. Cần mạng + `roboflow.api_key` + `workspace` + `workflow_id`.
+
+**Giả định chưa kiểm chứng:** toạ độ trả về được coi là nằm trong hệ toạ độ của ẢNH GỐC.
+Nếu workflow có bước resize/crop, toạ độ có thể thuộc không gian đã xử lý trong khi kích
+thước dùng để tính lại (từ ảnh gốc decode cục bộ) không khớp, làm sai lệch centroid và
+`size_mm` một cách âm thầm — xác nhận bằng `python -m ml.infer.probe` trên workflow thật
+trước khi tin số đo.
 
 **Bước bắt buộc lần đầu — dò tên output của workflow.** Response của Workflow API là
 một *list*, mỗi phần tử là dict khoá theo **tên output do chính workflow đặt** (không có

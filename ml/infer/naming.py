@@ -28,9 +28,11 @@ def sample_code_from_filename(filename: str) -> str:
 def resolve_px_per_mm(value):
     """Return (px_per_mm, used_default).
 
-    When the caller passes None, fall back to DEFAULT_PX_PER_MM and flag it so
-    the CLI can warn that size_mm is a placeholder, not a real calibration.
+    When the caller passes None, or a non-positive value (0 or negative - not a
+    physically valid scale), fall back to DEFAULT_PX_PER_MM and flag it so the
+    CLI can warn that size_mm is a placeholder, not a real calibration. A silent
+    0.0 would otherwise flow straight into every particle's size_mm.
     """
-    if value is None:
+    if value is None or float(value) <= 0:
         return DEFAULT_PX_PER_MM, True
     return float(value), False

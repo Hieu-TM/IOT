@@ -3,3 +3,4 @@ tensorflow>=2.15.0
 numpy
 requests
 opencv-python
+pillow

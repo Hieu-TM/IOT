@@ -17,6 +17,12 @@ workflow, or output name is hard-coded here.
 
 Run `python -m ml.infer.probe <image>` once you have credentials to print the real
 response structure, then pin roboflow.predictions_key in ml/config.toml.
+
+ASSUMPTION (unverified - needs a live workflow to confirm): predictions are returned
+in the ORIGINAL image's coordinate space. If the workflow contains a resize/crop
+block, coordinates may come back in the PROCESSED space while the dimensions used
+here are the original, silently scaling every centroid and size_mm. Verify with
+`python -m ml.infer.probe` against a real workflow before trusting measurements.
 """
 
 import base64
@@ -71,12 +77,25 @@ def extract_predictions(entry, predictions_key=""):
     return []
 
 
-def _to_detection(pred):
-    w = int(round(float(pred["width"])))
-    h = int(round(float(pred["height"])))
-    # Roboflow gives the bbox CENTER; Detection.bbox_xywh is TOP-LEFT.
-    x = int(round(float(pred["x"]) - w / 2))
-    y = int(round(float(pred["y"]) - h / 2))
+def _to_detection(pred, image_width=None, image_height=None):
+    """Convert one Roboflow prediction (CENTER x/y + size) to a Detection.
+
+    Roboflow does not clamp boxes to the image, so an edge-touching particle can
+    yield a negative top-left origin. The ingest schema declares bbox_x/bbox_y
+    with ge=0 and validates the whole payload as a unit, so a single negative
+    origin would reject the entire sample. Clamp to the image rectangle here.
+    """
+    cx, cy = float(pred["x"]), float(pred["y"])
+    pw, ph = float(pred["width"]), float(pred["height"])
+    x0, y0 = cx - pw / 2.0, cy - ph / 2.0
+    x1, y1 = x0 + pw, y0 + ph
+    x0, y0 = max(0.0, x0), max(0.0, y0)
+    if image_width is not None:
+        x1 = min(float(image_width), x1)
+    if image_height is not None:
+        y1 = min(float(image_height), y1)
+    x, y = int(round(x0)), int(round(y0))
+    w, h = int(round(x1)) - x, int(round(y1)) - y
     return Detection(
         bbox_xywh=(x, y, w, h),
         class_name=str(pred.get("class") or pred.get("class_name") or "unknown"),
@@ -148,6 +167,7 @@ class RoboflowWorkflowDetector:
         self.predictions_key = predictions_key or ""
         self.timeout = timeout
         self.retries = retries
+        self._warned_no_predictions = False
 
     @property
     def url(self):
@@ -193,14 +213,24 @@ class RoboflowWorkflowDetector:
         entries = raw if isinstance(raw, list) else [raw]
         entry = entries[0] if entries else {}
         predictions = extract_predictions(entry, self.predictions_key)
+        if not predictions and entry:
+            if not self._warned_no_predictions:
+                self._warned_no_predictions = True
+                print("[warn] no predictions resolved from the workflow response "
+                      f"(predictions_key={self.predictions_key!r}). If the workflow "
+                      "did detect something, run `python -m ml.infer.probe <image>` "
+                      "to find the real output name and set roboflow.predictions_key.")
         detections = []
         for pred in predictions:
             try:
-                detections.append(_to_detection(pred))
+                detection = _to_detection(pred, width, height)
             except (KeyError, TypeError, ValueError):
                 # The workflow's output shape is not guaranteed - one malformed
                 # entry must not sink the whole frame.
                 continue
+            if detection.bbox_xywh[2] <= 0 or detection.bbox_xywh[3] <= 0:
+                continue  # box lies entirely outside the image
+            detections.append(detection)
         return DetectionResult(
             detections=detections,
             image_width=width,

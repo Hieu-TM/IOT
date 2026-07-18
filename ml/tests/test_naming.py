@@ -28,3 +28,8 @@ def test_resolve_px_per_mm_default():
 
 def test_resolve_px_per_mm_explicit():
     assert resolve_px_per_mm(20.0) == (20.0, False)
+
+
+def test_resolve_px_per_mm_rejects_non_positive():
+    assert resolve_px_per_mm(0) == (DEFAULT_PX_PER_MM, True)
+    assert resolve_px_per_mm(-5) == (DEFAULT_PX_PER_MM, True)

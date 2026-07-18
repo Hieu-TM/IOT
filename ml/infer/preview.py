@@ -8,6 +8,10 @@ human to eyeball during a demo; the on-screen count is transient, not audited.
 
 Structurally cannot write to the database — visualization only.
 
+Deliberately uses the LOCAL detector only, never --backend roboflow: calling a
+hosted API once per displayed frame would be slow, cost money per call, and
+quickly hit rate limits. Do not "fix" this into taking a --backend flag.
+
 Usage:
     python -m ml.infer.preview --source webcam:0 --weights ml/models/best.pt --fps 2
     python -m ml.infer.preview --source http://<esp32-ip>/stream --weights ml/models/best.pt

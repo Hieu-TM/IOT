@@ -246,6 +246,61 @@ def test_run_retries_rate_limit(monkeypatch):
     assert calls["n"] == 2   # 429 IS worth backing off on
 
 
+def test_run_clamps_edge_touching_box_to_non_negative_origin(monkeypatch):
+    # center x=6 width=20 -> raw x0 = -4, must clamp to 0 with width shrunk to 16
+    payload = [{"out": [{"x": 6, "y": 30, "width": 20, "height": 20,
+                         "class": "fiber", "confidence": 0.5}]}]
+    monkeypatch.setattr(rfmod.requests, "post",
+                        lambda url, json=None, timeout=None: _Resp(payload))
+    result = _detector().run(_jpeg_bytes(w=64, h=48))
+    assert result.detections[0].bbox_xywh == (0, 20, 16, 20)
+
+
+def test_run_clamps_box_overflowing_right_and_bottom(monkeypatch):
+    # image is 64x48; center (60,44) size 20x20 -> x1=70 -> clamp 64, y1=54 -> clamp 48
+    payload = [{"out": [{"x": 60, "y": 44, "width": 20, "height": 20,
+                         "class": "film", "confidence": 0.5}]}]
+    monkeypatch.setattr(rfmod.requests, "post",
+                        lambda url, json=None, timeout=None: _Resp(payload))
+    result = _detector().run(_jpeg_bytes(w=64, h=48))
+    assert result.detections[0].bbox_xywh == (50, 34, 14, 14)
+
+
+def test_run_drops_box_entirely_outside_image(monkeypatch):
+    payload = [{"out": [{"x": -50, "y": -50, "width": 10, "height": 10,
+                         "class": "ghost", "confidence": 0.5}]}]
+    monkeypatch.setattr(rfmod.requests, "post",
+                        lambda url, json=None, timeout=None: _Resp(payload))
+    result = _detector().run(_jpeg_bytes(w=64, h=48))
+    assert result.detections == []
+
+
+def test_run_never_emits_negative_origin(monkeypatch):
+    payload = [{"out": [
+        {"x": 1, "y": 1, "width": 30, "height": 30, "class": "a", "confidence": 0.5},
+        {"x": 63, "y": 47, "width": 30, "height": 30, "class": "b", "confidence": 0.5},
+    ]}]
+    monkeypatch.setattr(rfmod.requests, "post",
+                        lambda url, json=None, timeout=None: _Resp(payload))
+    result = _detector().run(_jpeg_bytes(w=64, h=48))
+    assert result.detections, "expected boxes to survive clamping"
+    for d in result.detections:
+        assert d.bbox_xywh[0] >= 0 and d.bbox_xywh[1] >= 0   # ingest schema requires ge=0
+        assert d.bbox_xywh[2] > 0 and d.bbox_xywh[3] > 0
+
+
+def test_run_warns_once_when_no_predictions_resolved(monkeypatch, capsys):
+    payload = [{"some_other_output": {"count": 0}}]
+    monkeypatch.setattr(rfmod.requests, "post",
+                        lambda url, json=None, timeout=None: _Resp(payload))
+    det = _detector()
+    det.run(_jpeg_bytes())
+    det.run(_jpeg_bytes())
+    out = capsys.readouterr().out
+    assert "no predictions resolved" in out
+    assert out.count("no predictions resolved") == 1   # warn once, not per frame
+
+
 def test_run_skips_malformed_predictions(monkeypatch):
     payload = [{"out": [
         {"x": 10, "y": 10, "width": 4, "height": 4, "class": "fiber", "confidence": 0.5},

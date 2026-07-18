@@ -95,7 +95,14 @@ def main(argv=None):
         print(f"[warn] px_per_mm not set; using default {px} px/mm. "
               "size_mm is a PLACEHOLDER, not a real calibration.")
 
-    detector = build_detector(cfg, backend, weights)
+    try:
+        detector = build_detector(cfg, backend, weights)
+    except Exception as exc:
+        print(f"[error] cannot start backend={backend!r}: {exc}")
+        for problem in cfg.missing_for(backend):
+            print(f"  - {problem}")
+        print("Run `python -m ml.infer --check-config` after fixing.")
+        return 2
     source = FolderSource(args.input)
 
     created = already = failed = 0
