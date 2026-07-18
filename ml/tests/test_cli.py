@@ -208,3 +208,82 @@ def test_cli_config_px_per_mm_suppresses_placeholder_warning(tmp_path, monkeypat
 
     assert rc == 0
     assert "PLACEHOLDER" not in out   # a configured calibration is a deliberate choice
+
+
+def test_check_config_reports_ok_for_local_with_weights(tmp_path, capsys):
+    weights = tmp_path / "best.pt"
+    weights.write_bytes(b"fake")
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(f'[local]\nweights = "{weights.as_posix()}"\n',
+                        encoding="utf-8")
+
+    rc = cli.main(["--config", str(cfg_file), "--check-config"])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "OK" in out
+
+
+def test_check_config_reports_missing_roboflow_key(tmp_path, capsys):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('[general]\nbackend = "roboflow"\n', encoding="utf-8")
+
+    rc = cli.main(["--config", str(cfg_file), "--check-config"])
+    out = capsys.readouterr().out
+
+    assert rc == 1
+    assert "api_key" in out
+
+
+def test_check_config_never_prints_the_api_key(tmp_path, capsys):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(
+        '[general]\nbackend = "roboflow"\n'
+        '[roboflow]\napi_key = "SUPERSECRET123"\nworkspace = "ws"\n'
+        'workflow_id = "wf"\n',
+        encoding="utf-8",
+    )
+
+    rc = cli.main(["--config", str(cfg_file), "--check-config"])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "SUPERSECRET123" not in out   # secrets must never be echoed
+
+
+def test_backend_roboflow_builds_workflow_detector(tmp_path, monkeypatch):
+    _jpeg(tmp_path / "a.jpg")
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(
+        '[roboflow]\napi_key = "k"\nworkspace = "ws"\nworkflow_id = "wf"\n'
+        'predictions_key = "out"\n',
+        encoding="utf-8",
+    )
+
+    built = {}
+
+    class _FakeWorkflowDetector:
+        def __init__(self, **kwargs):
+            built.update(kwargs)
+
+        def run(self, image_bytes):
+            return DetectionResult(
+                detections=[Detection((1, 2, 3, 4), "fiber", 0.8)],
+                image_width=32, image_height=32,
+            )
+
+    monkeypatch.setattr(cli, "RoboflowWorkflowDetector", _FakeWorkflowDetector)
+    monkeypatch.setattr(
+        cli, "post",
+        lambda *a, **k: type("R", (), {"status": "created",
+                                       "http_status": 201, "detail": ""})(),
+    )
+
+    rc = cli.main([str(tmp_path), "--config", str(cfg_file),
+                   "--backend", "roboflow", "--px-per-mm", "10"])
+
+    assert rc == 0
+    assert built["api_key"] == "k"
+    assert built["workspace"] == "ws"
+    assert built["workflow_id"] == "wf"
+    assert built["predictions_key"] == "out"

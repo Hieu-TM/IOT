@@ -10,6 +10,7 @@ import sys
 
 from . import config
 from .detector import Detector
+from .detector_roboflow import RoboflowWorkflowDetector
 from .ingest_client import post
 from .mapper import build_metadata
 from .naming import resolve_px_per_mm
@@ -35,12 +36,48 @@ def build_arg_parser():
     p.add_argument("--batch-lot", default=None)
     p.add_argument("--dry-run", action="store_true",
                    help="Detect and print only; do not POST to the API")
+    p.add_argument("--check-config", action="store_true",
+                   help="Validate the resolved config for the chosen backend and exit")
     return p
+
+
+def build_detector(cfg, backend, weights):
+    """Construct the detector for the chosen backend.
+
+    Both backends return the identical DetectionResult contract, so everything
+    downstream (mapper, ingest_client) is backend-agnostic.
+    """
+    if backend == "roboflow":
+        rf = cfg.section("roboflow")
+        return RoboflowWorkflowDetector(
+            api_key=rf.get("api_key"),
+            workspace=rf.get("workspace"),
+            workflow_id=rf.get("workflow_id"),
+            endpoint=rf.get("endpoint"),
+            image_input_name=rf.get("image_input_name"),
+            predictions_key=rf.get("predictions_key"),
+            timeout=rf.get("timeout_s"),
+            retries=rf.get("retries"),
+        )
+    return Detector(weights)
 
 
 def main(argv=None):
     args = build_arg_parser().parse_args(argv)
     cfg = config.load(args.config)
+
+    backend = args.backend if args.backend is not None else cfg.get("general", "backend")
+
+    if args.check_config:
+        problems = cfg.missing_for(backend)
+        print(f"backend = {backend}")
+        if problems:
+            print("Config NOT ready:")
+            for p in problems:
+                print(f"  - {p}")
+            return 1
+        print("Config OK - ready to run.")
+        return 0
 
     if not args.input:
         print("[error] missing input (image file or folder). See --help.")
@@ -58,7 +95,7 @@ def main(argv=None):
         print(f"[warn] px_per_mm not set; using default {px} px/mm. "
               "size_mm is a PLACEHOLDER, not a real calibration.")
 
-    detector = Detector(weights)
+    detector = build_detector(cfg, backend, weights)
     source = FolderSource(args.input)
 
     created = already = failed = 0
