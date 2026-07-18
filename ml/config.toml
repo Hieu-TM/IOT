@@ -1,0 +1,65 @@
+# Aqua Scope — cau hinh tap trung cho package ml/
+#
+# Thu tu uu tien (cao thang thap):
+#   co CLI  >  bien moi truong  >  config.local.toml  >  file nay  >  mac dinh trong code
+#
+# File NAY duoc commit: chi chua gia tri KHONG bi mat, va tai lieu hoa moi khoa.
+# Bi mat (API key) -> dat trong ml/config.local.toml (da gitignore) hoac bien moi truong.
+# Ten bien moi truong: AQUA_<SECTION>_<KEY>, vd AQUA_ROBOFLOW_API_KEY.
+
+[general]
+# Chon huong chay:
+#   "local"    = Huong 1 - model .pt tu train (can weights, chay offline, xuong duoc chip)
+#   "roboflow" = Huong 2 - goi API Roboflow (khong can weights, can mang + api_key)
+backend = "local"
+
+[ingest]
+api_url = "http://localhost:8000"   # backend web nhan ket qua
+device_id = "pc-infer"              # ghi vao ban ghi audit
+# batch_lot = "LOT-001"             # tuy chon: ma lo san xuat
+timeout_s = 30
+
+[calibration]
+# CO Y DE TRONG. Chua set => CLI se in canh bao "size_mm la PLACEHOLDER,
+# khong phai hieu chuan that". Chi set khi ban DA DO duoc px/mm that tren rig.
+# px_per_mm = 14.0
+
+[local]
+# Huong 1 - weights tu train. Tao ra bang: python -m ml.train.train_detector
+weights = "ml/models/best.pt"
+confidence = 0.25
+
+[roboflow]
+# Huong 2 - hosted Workflow API. KHONG dien api_key vao day (file nay duoc commit).
+# Dat trong ml/config.local.toml hoac: export AQUA_ROBOFLOW_API_KEY=...
+api_key = ""
+endpoint = "https://serverless.roboflow.com"
+workspace = ""                      # workspace slug, lay tu URL workflow cua ban
+workflow_id = ""                    # workflow SLUG (khong phai document id)
+image_input_name = "image"          # ten input anh ma workflow khai bao
+# Ten khoa output chua predictions trong response cua workflow.
+# De TRONG => tu do tim. Chay lenh sau de xem cau truc response that:
+#   python -m ml.infer.probe <anh.jpg>
+# roi dien ten khoa vao day, vd "model_predictions" hoac "model_predictions.predictions"
+predictions_key = ""
+confidence = 0.5
+timeout_s = 30
+retries = 2
+
+[dataset]
+# Huong 1 - tai dataset ve de tu train (weights KHONG tai duoc, nhung dataset thi duoc)
+workspace = "iam"
+project = "microplastics-m7mf5"
+version = 1
+format = "yolov11"
+out_dir = "ml/datasets"
+
+[train]
+base_model = "yolo11n.pt"
+epochs = 100
+imgsz = 416
+batch = 16
+
+[export]
+tflite_imgsz = 192                  # nho nhat ma van phan giai duoc hat ~2mm
+int8 = true
