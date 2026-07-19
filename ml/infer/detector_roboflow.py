@@ -52,6 +52,44 @@ def _dig(node, dotted):
     return node
 
 
+def response_entries(raw):
+    """Normalise a workflow response into the per-image entry list.
+
+    Roboflow serverless wraps results as {"outputs": [...], "profiler_trace": [...]}.
+    Unwrapping `outputs` is what makes a configured predictions_key (the workflow's
+    declared output name, e.g. "predictions") actually addressable - without it the
+    whole envelope is treated as one entry and a correct key resolves nothing.
+    Bare-list and bare-dict responses are still accepted.
+    """
+    if isinstance(raw, dict) and isinstance(raw.get("outputs"), list):
+        return raw["outputs"]
+    if isinstance(raw, list):
+        return raw
+    return [raw]
+
+
+def response_image_dims(entry):
+    """Return (width, height) reported by the workflow, or (None, None).
+
+    Searched breadth-first because the image block's nesting depends on the
+    workflow's own output names.
+    """
+    queue = [entry]
+    while queue:
+        node = queue.pop(0)
+        if isinstance(node, dict):
+            img = node.get("image")
+            if isinstance(img, dict) and "width" in img and "height" in img:
+                try:
+                    return int(img["width"]), int(img["height"])
+                except (TypeError, ValueError):
+                    return None, None
+            queue.extend(v for v in node.values() if isinstance(v, (dict, list)))
+        elif isinstance(node, list):
+            queue.extend(v for v in node if isinstance(v, (dict, list)))
+    return None, None
+
+
 def extract_predictions(entry, predictions_key=""):
     """Locate the list of prediction dicts inside ONE workflow output entry.
 
@@ -168,6 +206,8 @@ class RoboflowWorkflowDetector:
         self.timeout = timeout
         self.retries = retries
         self._warned_no_predictions = False
+        self._warned_bad_key = False
+        self._warned_dims = False
 
     @property
     def url(self):
@@ -210,9 +250,28 @@ class RoboflowWorkflowDetector:
         # Dimensions come from decoding locally: the workflow response may not carry them.
         width, height = Image.open(BytesIO(image_bytes)).size
         raw = self.fetch_raw(image_bytes)
-        entries = raw if isinstance(raw, list) else [raw]
+        entries = response_entries(raw)
         entry = entries[0] if entries else {}
+
+        rw, rh = response_image_dims(entry)
+        if rw and rh and (rw, rh) != (width, height) and not self._warned_dims:
+            self._warned_dims = True
+            print(f"[warn] workflow reports image {rw}x{rh} but the local image is "
+                  f"{width}x{height}. Coordinates may be in a processed space; "
+                  "every size_mm would be scaled wrong. Check the workflow for a "
+                  "resize/crop block.")
+
         predictions = extract_predictions(entry, self.predictions_key)
+        if not predictions and self.predictions_key:
+            fallback = extract_predictions(entry, "")
+            if fallback:
+                if not self._warned_bad_key:
+                    self._warned_bad_key = True
+                    print(f"[warn] predictions_key={self.predictions_key!r} resolved 0 "
+                          f"predictions but auto-detect found {len(fallback)}. Using "
+                          "auto-detect. Fix roboflow.predictions_key "
+                          "(run `python -m ml.infer.probe <image>`).")
+                predictions = fallback
         if not predictions and entry:
             if not self._warned_no_predictions:
                 self._warned_no_predictions = True

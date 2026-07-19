@@ -318,6 +318,86 @@ def test_run_skips_malformed_predictions(monkeypatch):
     assert result.detections[0].class_name == "fiber"
 
 
+# --- real workflow response shape (captured live) -------------------------
+
+def _real_envelope(preds=None, image_dims=(640, 640)):
+    if preds is None:
+        preds = [{"x": 523.5, "y": 300.0, "width": 39.0, "height": 34.0,
+                  "confidence": 0.7734, "class_id": 1, "class": "film",
+                  "detection_id": "abc", "parent_id": "image"}]
+    return {
+        "outputs": [{"predictions": {
+            "image": {"width": image_dims[0], "height": image_dims[1]},
+            "predictions": preds,
+        }}],
+        "profiler_trace": [],
+    }
+
+
+def test_response_entries_unwraps_outputs_envelope():
+    raw = _real_envelope()
+    entries = rfmod.response_entries(raw)
+    assert len(entries) == 1
+    assert "predictions" in entries[0]
+
+
+def test_response_entries_accepts_bare_list_and_dict():
+    assert rfmod.response_entries([{"a": 1}]) == [{"a": 1}]
+    assert rfmod.response_entries({"a": 1}) == [{"a": 1}]
+
+
+def test_declared_output_name_resolves_against_real_envelope(monkeypatch):
+    # "predictions" is the workflow's declared output name; it MUST work.
+    raw = _real_envelope()
+    monkeypatch.setattr(rfmod.requests, "post",
+                        lambda url, json=None, timeout=None: _Resp(raw))
+    det = _detector(predictions_key="predictions")
+    result = det.run(_jpeg_bytes(w=640, h=640))
+    assert len(result.detections) == 1
+    assert result.detections[0].bbox_xywh == (504, 283, 39, 34)
+    assert result.detections[0].class_name == "film"
+
+
+def test_autodetect_also_resolves_real_envelope(monkeypatch):
+    raw = _real_envelope()
+    monkeypatch.setattr(rfmod.requests, "post",
+                        lambda url, json=None, timeout=None: _Resp(raw))
+    result = _detector(predictions_key="").run(_jpeg_bytes(w=640, h=640))
+    assert len(result.detections) == 1
+
+
+def test_wrong_predictions_key_warns_and_falls_back(monkeypatch, capsys):
+    raw = _real_envelope()
+    monkeypatch.setattr(rfmod.requests, "post",
+                        lambda url, json=None, timeout=None: _Resp(raw))
+    det = _detector(predictions_key="totally_wrong")
+    result = det.run(_jpeg_bytes(w=640, h=640))
+    det.run(_jpeg_bytes(w=640, h=640))
+    out = capsys.readouterr().out
+    assert len(result.detections) == 1          # data preserved, not silently dropped
+    assert "resolved 0" in out
+    assert out.count("resolved 0") == 1         # warn once
+
+
+def test_warns_when_response_dims_differ_from_local(monkeypatch, capsys):
+    raw = _real_envelope(image_dims=(320, 320))   # workflow resized
+    monkeypatch.setattr(rfmod.requests, "post",
+                        lambda url, json=None, timeout=None: _Resp(raw))
+    det = _detector()
+    det.run(_jpeg_bytes(w=640, h=640))
+    out = capsys.readouterr().out
+    assert "320x320" in out and "640x640" in out
+    assert "processed space" in out
+
+
+def test_no_dims_warning_when_they_match(monkeypatch, capsys):
+    raw = _real_envelope(image_dims=(640, 640))
+    monkeypatch.setattr(rfmod.requests, "post",
+                        lambda url, json=None, timeout=None: _Resp(raw))
+    _detector().run(_jpeg_bytes(w=640, h=640))
+    assert "processed space" not in capsys.readouterr().out
+
+
 # --- probe summariser (must never emit blobs) ----------------------------
 
 def test_summarize_elides_large_blobs():
