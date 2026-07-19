@@ -150,10 +150,50 @@ def test_env_leaves_batch_lot_as_string(tmp_path):
 
 
 def test_station_defaults_present():
-    cfg = cfgmod.load(config_path="ml/config.toml", env={})
+    """Mặc định của [station] có trong DEFAULTS, không cần file cấu hình nào."""
+    cfg = cfgmod.load(config_path=None, env={})
+    assert cfg.get("station", "host") == ""
     assert cfg.get("station", "timeout_s") == 20
     assert cfg.get("station", "retries") == 3
     assert cfg.get("station", "interval_s") == 2.0
+
+
+def test_station_section_is_read_from_config_file(tmp_path):
+    """File cấu hình phải thực sự đè được lên DEFAULTS.
+
+    Giá trị trong file cố ý KHÁC DEFAULTS. Bản đầu của test này dùng giá trị
+    trùng DEFAULTS nên luôn xanh kể cả khi file không hề được đọc (_read_toml
+    nuốt lỗi file-not-found và trả {}) — tức là nó không kiểm được gì cả.
+    """
+    p = _write(tmp_path / "config.toml",
+               '[station]\nhost = "192.168.1.77"\ntimeout_s = 45\n'
+               'retries = 9\ninterval_s = 0.5\n')
+    cfg = cfgmod.load(p, env={})
+    assert cfg.get("station", "host") == "192.168.1.77"
+    assert cfg.get("station", "timeout_s") == 45
+    assert cfg.get("station", "retries") == 9
+    assert cfg.get("station", "interval_s") == 0.5
+
+
+def test_station_env_vars_are_coerced_to_the_right_types(tmp_path):
+    """Biến môi trường đến dưới dạng chuỗi và phải được ép về đúng kiểu.
+
+    Nếu không ép, `timeout_s` thành chuỗi "45" rồi đi thẳng vào tham số timeout
+    của requests — hỏng ở tận nơi khác, khó lần ngược.
+    """
+    p = _write(tmp_path / "config.toml", "")
+    cfg = cfgmod.load(p, env={
+        "AQUA_STATION_HOST": "10.0.0.5",
+        "AQUA_STATION_TIMEOUT_S": "45",
+        "AQUA_STATION_RETRIES": "9",
+        "AQUA_STATION_INTERVAL_S": "0.5",
+    })
+    assert cfg.get("station", "host") == "10.0.0.5"
+    assert cfg.get("station", "timeout_s") == 45
+    assert isinstance(cfg.get("station", "timeout_s"), int)
+    assert cfg.get("station", "retries") == 9
+    assert cfg.get("station", "interval_s") == 0.5
+    assert isinstance(cfg.get("station", "interval_s"), float)
 
 
 def test_missing_for_station_flags_empty_host():
