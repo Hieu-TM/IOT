@@ -332,7 +332,14 @@ static esp_err_t parse_get(httpd_req_t *req, char **obuf) {
 static esp_err_t cmd_handler(httpd_req_t *req) {
   char *buf = NULL;
   char variable[32];
-  char value[32];
+  // 65 = 64 + '\0'. Kích thước này GẮN VỚI giới hạn 1..64 ký tự của
+  // device_id (xem aqua_device.cpp::idValid()) — nếu value[] nhỏ hơn 65,
+  // httpd_query_key_value() cắt cụt các device_id dài và trả
+  // ESP_ERR_HTTPD_RESULT_TRUNC (≠ ESP_OK), bị bắt ở nhánh lỗi chung phía
+  // dưới nên nhánh "device_id" không bao giờ chạy tới cho id dài ≥32 ký tự,
+  // dù thông báo 400 bên dưới nói giới hạn là 64. Không thu nhỏ lại buffer
+  // này nếu chưa hiểu đang phá hợp đồng nào.
+  char value[65];
 
   if (parse_get(req, &buf) != ESP_OK) {
     return ESP_FAIL;
@@ -457,6 +464,17 @@ static esp_err_t device_handler(httpd_req_t *req) {
   }
 
   framesize_t fs = (s != nullptr) ? (framesize_t)s->status.framesize : FRAMESIZE_UXGA;
+  // s->status.framesize đến từ cmd_handler (var=framesize), nơi gán trực tiếp
+  // (framesize_t)atoi(value) mà KHÔNG validate — giá trị HTTP không qua kiểm
+  // tra ở bất kỳ điểm nào trên đường đi trước khi tới đây. Đây là chỗ đầu
+  // tiên trong file dùng nó làm chỉ số mảng resolution[], nên phải tự chặn:
+  // nhẹ thì đọc rác ra width/height trong JSON, nặng thì đọc ngoài vùng cấp
+  // phát gây LoadProhibited khiến board tự reset — không chấp nhận được với
+  // một trạm chạy tự động không người trông. FRAMESIZE_INVALID (sensor.h)
+  // là cận trên hợp lệ; ngoài khoảng [0, FRAMESIZE_INVALID) thì lùi về UXGA.
+  if (fs < 0 || fs >= FRAMESIZE_INVALID) {
+    fs = FRAMESIZE_UXGA;
+  }
   uint16_t w = resolution[fs].width;
   uint16_t h = resolution[fs].height;
 
