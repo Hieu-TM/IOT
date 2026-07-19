@@ -13,6 +13,12 @@ static char g_deviceId[65] = {0};
 static uint32_t g_captures = 0;
 
 // Cùng tập ký tự với SAMPLE_CODE_PATTERN của web (models.py). Giữ khớp.
+//
+// Lưu ý về lý do: server hiện KHÔNG validate device_id (chỉ sample_code có
+// field_validator, và chỉ sample_code mới thành tên file trong ingest.py).
+// Đây là phòng thủ chủ động ở nguồn, không phải vá một lỗ hổng đang mở: giữ
+// device_id trong tập ký tự an toàn để nó dùng được ở mọi chỗ sau này (tên
+// file, path URL, tên cột) mà không phải rà lại.
 static bool idCharOk(char c) {
   return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
          (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-';
@@ -41,6 +47,11 @@ void aquaDeviceInit() {
 
   if (saved.length() > 0 && idValid(saved.c_str())) {
     strncpy(g_deviceId, saved.c_str(), sizeof(g_deviceId) - 1);
+    // strncpy KHÔNG tự thêm null khi nguồn dài đúng bằng sức chứa. Hiện tại
+    // g_deviceId là static zero-init nên byte cuối vẫn là 0, nhưng dựa vào
+    // bất biến ngầm đó thì hỏng ngay khi có ai gọi lại hàm này sau một lần
+    // ghi khác. Tự bảo đảm, đừng dựa vào may mắn.
+    g_deviceId[sizeof(g_deviceId) - 1] = '\0';
   } else {
     makeDefaultId(g_deviceId, sizeof(g_deviceId));
   }

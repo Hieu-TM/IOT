@@ -93,8 +93,14 @@ camera trong NVS.
 Vì sao: hiện `ingest.device_id` trong `ml/config.toml` là hằng `"pc-infer"` — mọi mẫu
 đều mang chung một tên. Với sổ audit thì cột đó phải chỉ ra **thiết bị đo thật**.
 
-Ràng buộc: `device_id` phải khớp `^[A-Za-z0-9._-]{1,64}$` để đi lọt qua ingest contract
-của web (`web/backend/app/models.py`).
+Ràng buộc: `device_id` giữ trong tập ký tự `^[A-Za-z0-9._-]{1,64}$`, cùng tập với
+`SAMPLE_CODE_PATTERN` của web (`web/backend/app/models.py`).
+
+**Đính chính (phát hiện khi review Task 2):** ban đầu bản thiết kế này ghi rằng web dùng
+`device_id` nguyên văn làm tên file ảnh. **Sai.** Tên file dựng từ `sample_code`
+(`routers/ingest.py`), còn `device_id` chỉ là một cột string và **không có validator nào**
+phía server. Ràng buộc trên vì thế là **phòng thủ chủ động ở nguồn**, không phải vá một lỗ
+hổng đang mở — giữ nó an toàn để sau này dùng được ở mọi chỗ mà không phải rà lại.
 
 ### A3. Độ bền khi chạy dài
 

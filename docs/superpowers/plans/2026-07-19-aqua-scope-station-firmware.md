@@ -12,7 +12,7 @@
 
 - Board đích: **AI Thinker ESP32-CAM (OV2640)**, Partition Scheme **Huge APP (3MB No OTA/1MB SPIFFS)**.
 - Tài liệu và comment trong repo này viết **tiếng Việt** (theo CLAUDE.md).
-- `device_id` phải khớp `^[A-Za-z0-9._-]{1,64}$` — ingest contract dùng nó nguyên văn (`web/backend/app/models.py`).
+- `device_id` giữ trong tập ký tự `^[A-Za-z0-9._-]{1,64}$` — cùng tập với `SAMPLE_CODE_PATTERN` (`web/backend/app/models.py`). Đây là phòng thủ ở nguồn: server **không** validate `device_id` và **không** dùng nó làm tên file (tên file dựng từ `sample_code`, xem `routers/ingest.py`).
 - `captured_at` phải **timezone-aware**; ingest từ chối datetime không có offset.
 - Mặc định backlit là bất khả xâm phạm: **AEC / AEC-DSP / AGC tắt**, gain 0, exposure thấp. Đừng để bất kỳ đường code nào bật lại chúng.
 - **Không** thêm điều khiển đèn nền, điều khiển bơm, hay suy luận on-device — ngoài phạm vi (spec §8).
