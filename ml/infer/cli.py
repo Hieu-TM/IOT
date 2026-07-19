@@ -162,6 +162,7 @@ def main(argv=None):
     failed_names = []
     collision_names = []
     seen_codes = {}  # sample_code -> first source_name this run
+    device_info = getattr(source, "device_info", None)
     for frame in source.frames():
         prior = seen_codes.get(frame.sample_code)
         if prior is not None:
@@ -183,6 +184,7 @@ def main(argv=None):
                 device_id=device_id,
                 px_per_mm=px,
                 batch_lot=batch_lot,
+                device_info=device_info,
             )
             if args.dry_run:
                 print(f"[dry-run] {frame.source_name}: "
