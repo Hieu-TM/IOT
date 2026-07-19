@@ -90,3 +90,10 @@ void aquaPrefsReset(sensor_t *s) {
   prefs.end();
   aquaPrefsApplyDefaults(s);
 }
+
+bool aquaPrefsIsSaved() {
+  prefs.begin(NVS_NS, true);  // read-only
+  bool saved = prefs.getBool("saved", false);
+  prefs.end();
+  return saved;
+}

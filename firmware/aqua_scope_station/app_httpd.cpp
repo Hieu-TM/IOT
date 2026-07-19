@@ -23,10 +23,15 @@
 #include "camera_index.h"
 #include "board_config.h"
 #include "aqua_prefs.h"
+#include "aqua_device.h"
+#include <WiFi.h>
 
 #if defined(ARDUINO_ARCH_ESP32) && defined(CONFIG_ARDUHAL_ESP_LOG)
 #include "esp32-hal-log.h"
 #endif
+
+// Bản firmware hiện hành — báo trong /device để đối chiếu khi audit.
+#define AQUA_FIRMWARE_VERSION "aqua_scope_station/1.0.0"
 
 // LED FLASH setup
 #if defined(LED_GPIO_NUM)
@@ -174,6 +179,8 @@ static esp_err_t capture_handler(httpd_req_t *req) {
     httpd_resp_send_500(req);
     return ESP_FAIL;
   }
+
+  aquaDeviceCountCapture();
 
   httpd_resp_set_type(req, "image/jpeg");
   httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=capture.jpg");
@@ -395,7 +402,14 @@ static esp_err_t cmd_handler(httpd_req_t *req) {
   }
   // --- Thêm cho Aqua Scope: ghi cứng / khôi phục cấu hình -------------------
   // `val` bị bỏ qua, chỉ cần có mặt cho đúng dạng /control?var=..&val=..
-  else if (!strcmp(variable, "save")) {
+  // Chuỗi, không phải số: dùng `value` thô chứ không dùng `val` (đã qua atoi).
+  else if (!strcmp(variable, "device_id")) {
+    if (!aquaDeviceSetId(value)) {
+      httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                          "device_id phải khớp [A-Za-z0-9._-], dài 1..64");
+      return ESP_FAIL;
+    }
+  } else if (!strcmp(variable, "save")) {
     aquaPrefsSave(s);
     log_i("Đã lưu cấu hình vào flash");
   } else if (!strcmp(variable, "reset")) {
@@ -425,6 +439,58 @@ static esp_err_t cmd_handler(httpd_req_t *req) {
 
 static int print_reg(char *p, char *end, sensor_t *s, uint16_t reg, uint32_t mask) {
   return snprintf(p, end - p, "\"0x%04x\":%d,", reg, s->get_reg(s, reg, mask));
+}
+
+// GET /device — danh tính + thiết lập hiện hành, phục vụ truy xuất nguồn gốc.
+// KHÁC với /status: /status trả cấu hình camera cho slider của web UI (định
+// dạng do bản gốc Espressif quy định, không được đổi). /device là khối audit
+// mà ml.infer nhét vào metadata của mẫu.
+static esp_err_t device_handler(httpd_req_t *req) {
+  static char json[640];
+  sensor_t *s = esp_camera_sensor_get();
+
+  const char *sensorName = "unknown";
+  if (s != nullptr) {
+    if (s->id.PID == OV2640_PID) sensorName = "OV2640";
+    else if (s->id.PID == OV3660_PID) sensorName = "OV3660";
+    else if (s->id.PID == OV5640_PID) sensorName = "OV5640";
+  }
+
+  framesize_t fs = (s != nullptr) ? (framesize_t)s->status.framesize : FRAMESIZE_UXGA;
+  uint16_t w = resolution[fs].width;
+  uint16_t h = resolution[fs].height;
+
+  snprintf(json, sizeof(json),
+           "{\"device_id\":\"%s\","
+           "\"firmware\":\"%s\","
+           "\"uptime_s\":%lu,"
+           "\"wifi\":{\"ssid\":\"%s\",\"rssi\":%d,\"ip\":\"%s\"},"
+           "\"psram\":%s,"
+           "\"sensor\":\"%s\","
+           "\"camera\":{\"framesize\":%d,\"width\":%u,\"height\":%u,"
+           "\"quality\":%d,\"aec\":%d,\"aec2\":%d,\"agc\":%d,"
+           "\"gain\":%d,\"exposure\":%d},"
+           "\"captures\":%lu,"
+           "\"prefs_saved\":%s}",
+           aquaDeviceId(),
+           AQUA_FIRMWARE_VERSION,
+           (unsigned long)(millis() / 1000UL),
+           WiFi.SSID().c_str(), WiFi.RSSI(), WiFi.localIP().toString().c_str(),
+           psramFound() ? "true" : "false",
+           sensorName,
+           (int)fs, w, h,
+           s ? s->status.quality : 0,
+           s ? s->status.aec : 0,
+           s ? s->status.aec2 : 0,
+           s ? s->status.agc : 0,
+           s ? s->status.agc_gain : 0,
+           s ? s->status.aec_value : 0,
+           (unsigned long)aquaDeviceCaptureCount(),
+           aquaPrefsIsSaved() ? "true" : "false");
+
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
 }
 
 static esp_err_t status_handler(httpd_req_t *req) {
@@ -721,6 +787,19 @@ void startCameraServer() {
 #endif
   };
 
+  httpd_uri_t device_uri = {
+    .uri = "/device",
+    .method = HTTP_GET,
+    .handler = device_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
   httpd_uri_t cmd_uri = {
     .uri = "/control",
     .method = HTTP_GET,
@@ -845,6 +924,7 @@ void startCameraServer() {
     httpd_register_uri_handler(camera_httpd, &index_uri);
     httpd_register_uri_handler(camera_httpd, &cmd_uri);
     httpd_register_uri_handler(camera_httpd, &status_uri);
+    httpd_register_uri_handler(camera_httpd, &device_uri);
     httpd_register_uri_handler(camera_httpd, &capture_uri);
     httpd_register_uri_handler(camera_httpd, &bmp_uri);
 

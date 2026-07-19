@@ -28,4 +28,7 @@ void aquaPrefsSave(sensor_t *s);
 // Xóa cấu hình đã lưu + áp lại mặc định backlit.
 void aquaPrefsReset(sensor_t *s);
 
+// Flash đã có cấu hình lưu hay chưa (không áp gì lên sensor).
+bool aquaPrefsIsSaved();
+
 #endif  // AQUA_PREFS_H
