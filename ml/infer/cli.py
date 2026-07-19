@@ -86,6 +86,19 @@ def main(argv=None):
     station_host = (args.from_board if args.from_board is not None
                     else cfg.get("station", "host"))
 
+    # general.backend chọn BACKEND SUY LUẬN (local .pt hay roboflow), trực
+    # giao với NGUỒN ẢNH (--from-board / station.host). "station" chỉ hợp lệ
+    # làm tham số backend nội bộ cho Config.missing_for() ở nhánh
+    # --check-config bên dưới - không phải giá trị người dùng được đặt cho
+    # general.backend. Nếu lọt qua đây, build_detector() rơi xuống nhánh mặc
+    # định Detector(weights) và chạy local mà không ai biết vì sao.
+    if backend == "station":
+        print("[error] general.backend=\"station\" không hợp lệ - đó là NGUỒN "
+              "ẢNH (dùng --from-board <ip> hoặc [station].host), không phải "
+              "backend suy luận. Đặt general.backend = \"local\" hoặc "
+              "\"roboflow\".")
+        return 2
+
     if args.check_config:
         problems = cfg.missing_for(backend)
         print(f"backend = {backend}")
@@ -132,6 +145,9 @@ def main(argv=None):
         print("Run `python -m ml.infer --check-config` after fixing.")
         return 2
     if args.input:
+        if args.count is not None or args.interval is not None:
+            print("[warn] --count/--interval chỉ có tác dụng cùng --from-board; "
+                  "bị bỏ qua ở chế độ đọc thư mục ảnh.")
         source = FolderSource(args.input)
     else:
         station = cfg.section("station")
@@ -206,7 +222,18 @@ def main(argv=None):
             failed_names.append(f"{frame.source_name} ({exc})")
             print(f"[failed] {frame.source_name}: {exc}")
 
+    # Esp32CaptureSource đếm khung nó tự bỏ (hỏng cả retries lần thử, vd board
+    # trả 503 lúc brownout) ở thuộc tính .skipped - khung đó KHÔNG BAO GIỜ tới
+    # vòng lặp trên nên created/already/failed không hề biết nó tồn tại. Không
+    # cộng số này vào đây thì "board hỏng toàn bộ 3/3 khung" sẽ in ra
+    # "0 created, 0 already_exists, 0 failed" và RC=0 - báo thành công trong
+    # khi mất trắng cả lượt đo. FolderSource không có thuộc tính này nên
+    # getattr mặc định 0 cho chế độ đọc thư mục ảnh.
+    skipped = getattr(source, "skipped", 0)
+
     summary = f"\nSummary: {created} created, {already} already_exists, {failed} failed"
+    if skipped:
+        summary += f", {skipped} skipped (board lỗi, không thu được khung)"
     if collisions:
         summary += f", {collisions} collisions (not sent)"
     print(summary)
@@ -218,7 +245,7 @@ def main(argv=None):
         print("Collisions (rename to store):")
         for n in collision_names:
             print(f"  - {n}")
-    return 1 if (failed or collisions) else 0
+    return 1 if (failed or collisions or skipped) else 0
 
 
 if __name__ == "__main__":

@@ -556,6 +556,67 @@ def test_device_id_falls_back_to_config_when_board_does_not_report_one(tmp_path,
     assert posted[0]["device_id"] == "cfg-device"
 
 
+# --- CRITICAL: board hỏng toàn bộ khung không được báo "thành công" --------
+
+def test_all_frames_failing_from_board_reports_skipped_and_nonzero_exit(tmp_path, monkeypatch, capsys):
+    """Tái hiện ca đã gặp thật: board brownout, /capture trả 503 cho MỌI
+    khung. Trước khi sửa: Esp32CaptureSource._capture_once() thất bại, khung
+    đó không bao giờ tới vòng lặp của cli.py nên created/already/failed đều
+    giữ nguyên 0 - Summary in "0 created, 0 already_exists, 0 failed" và
+    main() trả 0 (thành công), dù KHÔNG mẫu nào được ghi vào sổ audit truy
+    xuất nguồn gốc. Đây là ca đã dự liệu (503 là mã firmware trả lúc
+    brownout, không phải hiếm gặp), nên phải là một failure rõ ràng."""
+    monkeypatch.setattr(cli, "Detector", _FakeDetector)
+    cfg_file = tmp_path / "config.toml"
+    # retries=1, interval_s=0: giữ test nhanh, không đổi bản chất ca (mọi lần
+    # thử đều nhận 503, dù thử bao nhiêu lần cũng vậy).
+    cfg_file.write_text('[station]\nretries = 1\ninterval_s = 0\n', encoding="utf-8")
+    posted = []
+    _fake_post_recorder(monkeypatch, posted)
+
+    with _FakeBoard([("503", None)], device_response=("json", _DEVICE_JSON)) as board:
+        rc = cli.main(["--config", str(cfg_file), "--from-board", board.host,
+                       "--count", "3", "--px-per-mm", "10"])
+    out = capsys.readouterr().out
+
+    assert len(posted) == 0   # không mẫu nào được gửi lên /api/ingest
+    assert "0 created, 0 already_exists, 0 failed" in out
+    assert "3 skipped" in out
+    assert rc != 0            # KHÔNG được là 0 - đây là mất trắng cả lượt đo
+
+
+# --- MINOR #5: --count/--interval bị bỏ qua lặng lẽ ở chế độ thư mục -------
+
+def test_count_and_interval_warn_when_used_without_from_board(tmp_path, monkeypatch, capsys):
+    _jpeg(tmp_path / "a.jpg")
+    monkeypatch.setattr(cli, "Detector", _FakeDetector)
+    monkeypatch.setattr(cli, "post",
+                        lambda *a, **k: type("R", (), {"status": "created",
+                                                        "http_status": 201, "detail": ""})())
+
+    rc = cli.main([str(tmp_path), "--count", "5", "--interval", "1", "--px-per-mm", "10"])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "--count" in out and "--interval" in out
+    assert "bị bỏ qua" in out
+
+
+# --- MINOR #6: general.backend="station" không phải backend suy luận hợp lệ
+
+def test_backend_station_is_rejected_as_general_backend(tmp_path, capsys):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('[general]\nbackend = "station"\n[station]\nhost = "10.0.0.5"\n',
+                        encoding="utf-8")
+
+    rc = cli.main(["--config", str(cfg_file), "--check-config"])
+    out = capsys.readouterr().out
+
+    assert rc == 2
+    assert "station" in out
+    assert "OK" not in out   # trước khi sửa: rơi thẳng vào nhánh "Config OK"
+
+
 # --- Khoảng trống #4: --dry-run + --from-board không được POST -------------
 
 def test_dry_run_with_from_board_makes_no_post_request(tmp_path, monkeypatch):

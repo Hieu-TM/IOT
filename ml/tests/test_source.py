@@ -201,6 +201,31 @@ def test_503_frame_is_skipped_and_run_continues():
     assert len(frames) == 1
 
 
+def test_all_frames_503_are_counted_as_skipped():
+    # Ca CRITICAL đã tái hiện thật: board brownout, trả 503 cho MỌI khung.
+    # Trước khi sửa, source.skipped không tồn tại và cli.py không có cách nào
+    # biết 3 khung đã mất - Summary báo "0 failed" và RC=0 dù không mẫu nào
+    # được ghi. .skipped phải phản ánh đúng số khung mất để cli.py cộng vào
+    # Summary và trả RC khác 0 (xem test_cli.py::
+    # test_all_frames_failing_from_board_reports_skipped_and_nonzero_exit).
+    with _FakeBoard([("503", None)], device_response=("json", _DEVICE_JSON)) as board:
+        src = Esp32CaptureSource(board.host, count=3, interval_s=0, retries=1)
+        frames = list(src.frames())
+
+    assert frames == []
+    assert src.skipped == 3
+
+
+def test_partial_failure_increments_skipped_by_exactly_one():
+    with _FakeBoard([("503", None), ("jpeg", _jpeg_bytes())],
+                    device_response=("json", _DEVICE_JSON)) as board:
+        src = Esp32CaptureSource(board.host, count=2, interval_s=0, retries=1)
+        frames = list(src.frames())
+
+    assert len(frames) == 1
+    assert src.skipped == 1
+
+
 def test_server_dies_midway_yields_earlier_frames():
     """Brownout giữa burst: khung đã lấy được phải giữ nguyên, và vòng lặp
     phải KẾT THÚC bình thường thay vì ném ngoại lệ ra ngoài."""

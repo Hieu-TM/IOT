@@ -16,6 +16,12 @@ from .naming import sample_code_from_filename
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
 
+# Nghỉ giữa các lần thử lại /capture trong cùng một khung. Brownout WiFi (lý
+# do phổ biến nhất khiến /capture hỏng - xem docstring Esp32CaptureSource) cần
+# vài trăm ms mới hồi; thử lại liền tay trong vài mili-giây nhiều khả năng
+# đụng đúng lúc nguồn còn sụt và hỏng cả retries lần liên tiếp.
+_CAPTURE_RETRY_BACKOFF_S = 0.3
+
 
 @dataclass
 class Frame:
@@ -74,6 +80,12 @@ class Esp32CaptureSource:
         # Mã đã phát ra trong lượt đo này, để _next_sample_code() chống trùng
         # (xem docstring của hàm đó vì sao không thể dựa vào đồng hồ hệ thống).
         self._used_sample_codes = set()
+        # Số khung đã bỏ vì hỏng cả retries lần thử (xem frames()). cli.py đọc
+        # thuộc tính này SAU KHI đã tiêu thụ hết source.frames() để cộng vào
+        # Summary và quyết định exit code - nếu không, một lượt đo mà board
+        # brownout hết mọi khung sẽ báo "0 failed" và RC=0 dù không mẫu nào
+        # được ghi vào sổ audit (xem CLAUDE.md, bối cảnh QC nước đầu vào).
+        self.skipped = 0
         self.device_info = self._read_device()
 
     def _read_device(self):
@@ -96,7 +108,12 @@ class Esp32CaptureSource:
                 resp = requests.get(url, timeout=self.timeout_s)
                 resp.raise_for_status()
                 info = resp.json()
-            except Exception as exc:
+            except (StationError, requests.RequestException) as exc:
+                # Thu hẹp giống frames(): chỉ nuốt lỗi mạng/board (bao gồm
+                # requests.exceptions.JSONDecodeError - nó là subclass của
+                # RequestException từ requests>=2.27). Lỗi lập trình thật
+                # (AttributeError, TypeError, ...) phải nổi lên, không được
+                # báo chung chung là "không đọc được /device".
                 last_exc = exc
                 continue
             if not isinstance(info, dict):
@@ -139,6 +156,8 @@ class Esp32CaptureSource:
             body = None
             last_error = None
             for attempt in range(self.retries):
+                if attempt > 0:
+                    time.sleep(_CAPTURE_RETRY_BACKOFF_S)
                 try:
                     body = self._capture_once()
                     break
@@ -149,6 +168,7 @@ class Esp32CaptureSource:
                     last_error = exc
 
             if body is None:
+                self.skipped += 1
                 print(f"[warn] khung {i + 1}/{self.count} hỏng, bỏ qua: {last_error}")
                 continue
 
