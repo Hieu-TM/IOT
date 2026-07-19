@@ -166,17 +166,27 @@ class Config:
     def as_dict(self):
         return {section: dict(values) for section, values in self._data.items()}
 
-    def missing_for(self, backend):
+    def missing_for(self, backend, *, station_host=None):
         """Human-readable messages for keys that are required but unset.
 
         Empty list == ready to run with this backend.
+
+        `station_host` (chỉ dùng khi backend="station") là host THỰC SỰ sẽ
+        được dùng, đã áp thứ tự ưu tiên cờ CLI > env > config.local > config >
+        mặc định (mô-đun này chỉ tự biết tới env/config/config.local qua
+        self.get(); cờ --from-board sống ở cli.py nên caller phải truyền vào
+        đây). Không truyền (None) thì rơi về self.get("station", "host") như
+        trước - giữ tương thích ngược cho các lệnh gọi không có cờ CLI liên
+        quan (vd probe.py, hoặc test gọi thẳng missing_for("station")).
         """
         problems = []
         if backend == "station":
             # Trực giao với backend suy luận: chỉ kiểm tra nguồn ảnh có địa chỉ
             # hay chưa. CLI gọi riêng missing_for("station") cùng với
             # missing_for(<backend thật>) khi chạy --from-board.
-            if not self.get("station", "host"):
+            effective_host = (station_host if station_host is not None
+                               else self.get("station", "host"))
+            if not effective_host:
                 problems.append(
                     "station.host chưa đặt - IP của board, lấy từ Serial Monitor "
                     "(hoặc dùng cờ --from-board <ip>).")

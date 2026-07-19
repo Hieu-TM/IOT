@@ -206,3 +206,22 @@ def test_missing_for_station_flags_empty_host():
 def test_missing_for_station_ok_when_host_set():
     cfg = cfgmod.Config({"station": {"host": "192.168.1.50"}})
     assert cfg.missing_for("station") == []
+
+
+def test_missing_for_station_host_param_overrides_config_value():
+    # cfg.station.host trống, nhưng caller (cli.py) truyền vào host hiệu
+    # dụng đã áp thứ tự ưu tiên cờ CLI > env > config.local > config > mặc
+    # định (vd host đến từ --from-board). Không được báo thiếu trong ca này -
+    # đây chính là lỗi "check-config --from-board tự mâu thuẫn" đã sửa.
+    cfg = cfgmod.Config({"station": {"host": ""}})
+    assert cfg.missing_for("station", station_host="10.0.0.5") == []
+
+
+def test_missing_for_station_host_param_empty_still_flags_missing():
+    # host hiệu dụng thật sự rỗng (không cờ, không config) - vẫn phải báo thiếu.
+    cfg = cfgmod.Config({"station": {"host": "192.168.1.50"}})  # cfg CÓ host...
+    # ...nhưng caller truyền station_host="" (vd đã tự tính effective host và
+    # nó rỗng) - tham số phải thắng, không được âm thầm rơi về cfg.
+    problems = cfg.missing_for("station", station_host="")
+    assert len(problems) == 1
+    assert "station.host" in problems[0]

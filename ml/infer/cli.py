@@ -9,6 +9,7 @@ import argparse
 import sys
 
 from . import config
+from .encoding_utils import force_utf8_output
 from .detector import Detector
 from .detector_roboflow import RoboflowWorkflowDetector
 from .ingest_client import post
@@ -71,20 +72,28 @@ def build_detector(cfg, backend, weights):
 
 
 def main(argv=None):
+    force_utf8_output()
     args = build_arg_parser().parse_args(argv)
     cfg = config.load(args.config)
 
     backend = args.backend if args.backend is not None else cfg.get("general", "backend")
+    # Thứ tự ưu tiên chung của dự án (cờ CLI > env > config.local > config >
+    # mặc định): cfg.get() đã gộp sẵn env/config.local/config, chỉ còn thiếu
+    # cờ --from-board (sống ở argparse, ngoài tầm với của Config). Tính MỘT
+    # LẦN ở đây và dùng lại cho cả nhánh --check-config lẫn nhánh chạy thật -
+    # trước đây --check-config tự tính lại (thiếu cờ) nên báo host "chưa đặt"
+    # dù --from-board đã cung cấp nó (xem cfg.missing_for("station")).
+    station_host = (args.from_board if args.from_board is not None
+                    else cfg.get("station", "host"))
 
     if args.check_config:
         problems = cfg.missing_for(backend)
         print(f"backend = {backend}")
         # Nguồn ảnh trực giao với backend suy luận: chỉ soi khi người dùng thực
         # sự định chụp từ board, chứ không bắt ai chạy thư mục ảnh phải khai host.
-        if args.from_board or cfg.get("station", "host"):
-            host = args.from_board or cfg.get("station", "host")
-            print(f"station = {host or '(chưa đặt)'}")
-            problems = problems + cfg.missing_for("station")
+        if station_host:
+            print(f"station = {station_host}")
+            problems = problems + cfg.missing_for("station", station_host=station_host)
         if problems:
             print("Config NOT ready:")
             for p in problems:
@@ -92,9 +101,6 @@ def main(argv=None):
             return 1
         print("Config OK - ready to run.")
         return 0
-
-    station_host = (args.from_board if args.from_board is not None
-                    else cfg.get("station", "host"))
 
     if args.input and args.from_board:
         print("[error] chọn MỘT trong hai: thư mục ảnh, hoặc --from-board <ip>. "

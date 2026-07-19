@@ -1,7 +1,15 @@
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 from PIL import Image
 
 import ml.infer.cli as cli
 from ml.infer.detector import Detection, DetectionResult
+from ml.tests.test_source import _DEVICE_JSON, _FakeBoard, _jpeg_bytes
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _jpeg(path):
@@ -315,3 +323,217 @@ def test_no_input_and_no_station_host_reports_both_options(capsys):
     out = capsys.readouterr().out
     assert rc == 2
     assert "--from-board" in out
+
+
+# --- Important #1: --check-config --from-board tự mâu thuẫn (đã sửa) -------
+
+def test_check_config_from_board_flag_is_not_reported_missing(tmp_path, capsys):
+    # Trước khi sửa: station_host tới từ --from-board nhưng
+    # cfg.missing_for("station") chỉ đọc cfg.station.host (rỗng) nên vẫn báo
+    # thiếu, dù dòng "station = 10.0.0.5" ngay phía trên đã in ra host hợp lệ.
+    weights = tmp_path / "best.pt"
+    weights.write_bytes(b"fake")
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(f'[local]\nweights = "{weights.as_posix()}"\n',
+                        encoding="utf-8")
+
+    rc = cli.main(["--config", str(cfg_file), "--check-config",
+                   "--from-board", "10.0.0.5"])
+    out = capsys.readouterr().out
+
+    assert "station = 10.0.0.5" in out
+    assert "chưa đặt" not in out
+    assert rc == 0
+    assert "OK" in out
+
+
+def test_check_config_still_flags_missing_station_host_without_from_board(tmp_path, capsys):
+    # Đối chứng: host thật sự chưa đặt ở đâu cả (không --from-board, không
+    # [station].host trong config) thì không tự ý bật kiểm tra station - hành
+    # vi cũ, không được phá khi sửa Important #1 (nguồn ảnh trực giao với
+    # backend; ai chạy thư mục ảnh không bị bắt khai host).
+    weights = tmp_path / "best.pt"
+    weights.write_bytes(b"fake")
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(f'[local]\nweights = "{weights.as_posix()}"\n',
+                        encoding="utf-8")
+
+    rc = cli.main(["--config", str(cfg_file), "--check-config"])
+    out = capsys.readouterr().out
+
+    assert "station" not in out
+    assert rc == 0
+
+
+def test_check_config_reports_missing_station_host_when_configured_host_is_empty(tmp_path, capsys):
+    # Host đến từ [station].host trong config (không phải cờ) mà vẫn rỗng ->
+    # phải giữ nguyên hành vi báo thiếu khi người dùng CÓ mở mục [station]
+    # nhưng bỏ trống host.
+    weights = tmp_path / "best.pt"
+    weights.write_bytes(b"fake")
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(
+        f'[local]\nweights = "{weights.as_posix()}"\n'
+        '[station]\nhost = "10.0.0.9"\n',
+        encoding="utf-8",
+    )
+
+    rc = cli.main(["--config", str(cfg_file), "--check-config"])
+    out = capsys.readouterr().out
+
+    assert "station = 10.0.0.9" in out
+    assert "chưa đặt" not in out
+    assert rc == 0
+
+
+# --- Important #2: UnicodeEncodeError khi in StationError (đã sửa) ---------
+
+def test_station_error_at_init_exits_gracefully(tmp_path, monkeypatch, capsys):
+    # Yêu cầu #5 (khoảng trống test): StationError lúc khởi tạo Esp32CaptureSource
+    # phải làm CLI thoát tử tế (mã lỗi đúng, thông báo dùng được), không traceback.
+    monkeypatch.setattr(cli, "Detector", _FakeDetector)
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text("", encoding="utf-8")
+
+    # Cổng 1 trên localhost: không ai lắng nghe -> ECONNREFUSED ngay, không
+    # cần chờ hết timeout thật.
+    rc = cli.main(["--config", str(cfg_file), "--from-board", "127.0.0.1:1",
+                   "--px-per-mm", "10"])
+    out = capsys.readouterr().out
+
+    assert rc == 2
+    assert "[error]" in out
+    assert "Traceback" not in out
+
+
+def test_from_board_station_error_does_not_crash_under_cp1252_console(tmp_path):
+    """Khóa lại Important #2 đúng kiểu bắt được lỗi: chạy CLI thật trong tiến
+    trình con với PYTHONIOENCODING=cp1252 (console Windows mặc định), rồi
+    khẳng định nó thoát bằng mã lỗi tử tế chứ không phải UnicodeEncodeError.
+    capsys của pytest không đi qua encoding của console nên không bắt được ca
+    này - phải chạy subprocess thật (giống cách dataset_collector đã làm).
+    """
+    cfg_file = tmp_path / "config.toml"
+    # backend=roboflow với key giả: build_detector() không đụng mạng lúc khởi
+    # tạo (chỉ validate có mặt các trường), nên chạy được tới bước tạo
+    # Esp32CaptureSource mà không cần ultralytics/weights thật.
+    cfg_file.write_text(
+        '[general]\nbackend = "roboflow"\n'
+        '[roboflow]\napi_key = "k"\nworkspace = "ws"\nworkflow_id = "wf"\n',
+        encoding="utf-8",
+    )
+
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "cp1252"
+
+    # QUAN TRỌNG: force_utf8_output() ép stdout của TIẾN TRÌNH CON sang UTF-8
+    # bất kể PYTHONIOENCODING=cp1252 mô phỏng console Windows - đó chính là
+    # cách nó tránh UnicodeEncodeError. Vì vậy phía cha (subprocess.run) phải
+    # tự giải mã bằng UTF-8, KHÔNG dùng locale mặc định của máy (ở đây cũng
+    # là cp1252) - nếu không luồng đọc pipe của subprocess sẽ tự
+    # UnicodeDecodeError và proc.stdout/proc.stderr về None, che mất phép thử
+    # thật (xem lỗi encoding của chính máy cha nếu bỏ encoding="utf-8" ở đây).
+    proc = subprocess.run(
+        [sys.executable, "-m", "ml.infer", "--config", str(cfg_file),
+         "--from-board", "127.0.0.1:1", "--px-per-mm", "10"],
+        cwd=str(_REPO_ROOT), env=env, capture_output=True,
+        encoding="utf-8", errors="replace", timeout=60,
+    )
+
+    assert proc.returncode == 2, f"stdout={proc.stdout!r} stderr={proc.stderr!r}"
+    assert "UnicodeEncodeError" not in proc.stderr
+    assert "Traceback" not in proc.stderr
+    assert "[error]" in proc.stdout
+
+
+# --- Khoảng trống #3: thứ tự ưu tiên device_id (--from-board) --------------
+
+def _fake_post_recorder(monkeypatch, posted):
+    def fake_post(api_url, metadata, image_bytes, image_name):
+        posted.append(metadata)
+
+        class R:
+            status = "created"
+            http_status = 201
+            detail = ""
+
+        return R()
+
+    monkeypatch.setattr(cli, "post", fake_post)
+
+
+def test_device_id_flag_wins_over_board_and_config(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "Detector", _FakeDetector)
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('[ingest]\ndevice_id = "cfg-device"\n', encoding="utf-8")
+    posted = []
+    _fake_post_recorder(monkeypatch, posted)
+
+    with _FakeBoard([("jpeg", _jpeg_bytes())],
+                    device_response=("json", _DEVICE_JSON)) as board:
+        rc = cli.main(["--config", str(cfg_file), "--from-board", board.host,
+                       "--device-id", "flag-device", "--px-per-mm", "10"])
+
+    assert rc == 0
+    assert len(posted) == 1
+    assert posted[0]["device_id"] == "flag-device"
+
+
+def test_device_id_board_wins_over_config_when_flag_omitted(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "Detector", _FakeDetector)
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('[ingest]\ndevice_id = "cfg-device"\n', encoding="utf-8")
+    posted = []
+    _fake_post_recorder(monkeypatch, posted)
+
+    with _FakeBoard([("jpeg", _jpeg_bytes())],
+                    device_response=("json", _DEVICE_JSON)) as board:
+        rc = cli.main(["--config", str(cfg_file), "--from-board", board.host,
+                       "--px-per-mm", "10"])
+
+    assert rc == 0
+    assert len(posted) == 1
+    assert posted[0]["device_id"] == _DEVICE_JSON["device_id"]
+
+
+def test_device_id_falls_back_to_config_when_board_does_not_report_one(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "Detector", _FakeDetector)
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('[ingest]\ndevice_id = "cfg-device"\n', encoding="utf-8")
+    posted = []
+    _fake_post_recorder(monkeypatch, posted)
+
+    device_json_without_id = dict(_DEVICE_JSON)
+    del device_json_without_id["device_id"]
+
+    with _FakeBoard([("jpeg", _jpeg_bytes())],
+                    device_response=("json", device_json_without_id)) as board:
+        rc = cli.main(["--config", str(cfg_file), "--from-board", board.host,
+                       "--px-per-mm", "10"])
+
+    assert rc == 0
+    assert len(posted) == 1
+    assert posted[0]["device_id"] == "cfg-device"
+
+
+# --- Khoảng trống #4: --dry-run + --from-board không được POST -------------
+
+def test_dry_run_with_from_board_makes_no_post_request(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "Detector", _FakeDetector)
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text("", encoding="utf-8")
+    called = {"n": 0}
+
+    def fake_post(*a, **k):
+        called["n"] += 1
+
+    monkeypatch.setattr(cli, "post", fake_post)
+
+    with _FakeBoard([("jpeg", _jpeg_bytes())],
+                    device_response=("json", _DEVICE_JSON)) as board:
+        rc = cli.main(["--config", str(cfg_file), "--from-board", board.host,
+                       "--dry-run", "--px-per-mm", "10"])
+
+    assert rc == 0
+    assert called["n"] == 0   # DB là sổ audit, mỗi bản ghi là vĩnh viễn - dry-run
+                              # không được tạo bất kỳ request POST nào.
