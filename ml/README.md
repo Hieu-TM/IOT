@@ -96,11 +96,45 @@ tầng detector, chọn bằng `--backend`:
 
 | | Hướng 1 — `local` | Hướng 2 — `roboflow` |
 |---|---|---|
-| Trạng thái | Chưa làm (hoãn) | **Đã làm xong** |
+| Trạng thái | Chưa làm (hoãn) | **Đã làm xong, đã chạy thật** |
 | Weights local | Cần (tự train ra) | Không cần |
 | Mạng khi chạy | Không | Có (+ API key) |
 | Xuống chip (TFLite) | **Được** | Không |
 | Chạy được ngay | Sau khi train | Ngay |
+
+Hai hướng **không** nằm ở hai thư mục khác nhau. Chúng là hai file detector cạnh nhau
+trong cùng `ml/infer/`:
+
+```
+ml/infer/
+├── detector.py           ← hướng 1 (ultralytics, weights .pt)
+├── detector_roboflow.py  ← hướng 2 (Roboflow Workflow API)
+├── cli.py  mapper.py  ingest_client.py  source.py   ← dùng chung
+```
+
+Chỉ hai file detector là khác. Đọc ảnh, quy đổi kích thước, gửi lên web, ghi DB,
+dashboard — tất cả dùng chung và **không biết** mình đang chạy hướng nào. Chốt chặn
+nằm ở `build_detector()` trong `cli.py`: cả hai detector trả về cùng một kiểu
+`DetectionResult`, nên đổi hướng không phải sửa gì phía sau.
+
+Hệ quả cần biết: hai hướng có thể lệch nhau ở **hạt sát mép ảnh**. Roboflow trả về
+toạ độ tâm chưa clamp nên hạt chạm mép cho ra toạ độ âm, `detector_roboflow.py` phải
+tự clamp; ultralytics thì clamp sẵn. Chênh lệch ở biên là bình thường, không phải bug.
+
+### Đổi hướng chạy
+
+Sửa **`ml/config.local.toml`**:
+```toml
+[general]
+backend = "roboflow"   # hoặc "local"
+```
+
+Hoặc tạm thời cho một lần chạy: `python -m ml.infer <thư mục> --backend local`
+
+> **Bẫy hay gặp:** đừng sửa `backend` trong `ml/config.toml`. File `config.local.toml`
+> luôn thắng, nên sửa `config.toml` sẽ **không có tác dụng gì** nếu `config.local.toml`
+> cũng khai `backend`. Muốn biết cái nào đang thật sự có hiệu lực thì chạy
+> `python -m ml.infer --check-config`.
 
 ### Cấu hình tập trung
 
@@ -113,10 +147,18 @@ Thứ tự ưu tiên: `cờ CLI` > `biến môi trường` > `ml/config.local.to
 
 API key **không bao giờ** để trong `config.toml`. Tạo `ml/config.local.toml` (đã gitignore):
 ```toml
+[general]
+backend = "roboflow"
+
 [roboflow]
 api_key = "rf_xxxxxxxx"
 workspace = "<workspace-slug>"
 workflow_id = "<workflow-slug>"
+predictions_key = "predictions"   # xem phần probe bên dưới
+
+# Tham số gửi kèm ảnh cho workflow (tuỳ workflow của bạn khai báo gì).
+[roboflow.extra_inputs]
+model_id = "<project>/<version>"
 ```
 Hoặc dùng biến môi trường: `AQUA_ROBOFLOW_API_KEY`, `AQUA_ROBOFLOW_WORKSPACE`, `AQUA_INGEST_API_URL`, ...
 
@@ -134,22 +176,49 @@ python -m ml.infer <ảnh|thư mục> --backend roboflow --px-per-mm <n>
 ```
 Không cần weights, không cần ultralytics. Cần mạng + `roboflow.api_key` + `workspace` + `workflow_id`.
 
-**Giả định chưa kiểm chứng:** toạ độ trả về được coi là nằm trong hệ toạ độ của ẢNH GỐC.
-Nếu workflow có bước resize/crop, toạ độ có thể thuộc không gian đã xử lý trong khi kích
-thước dùng để tính lại (từ ảnh gốc decode cục bộ) không khớp, làm sai lệch centroid và
-`size_mm` một cách âm thầm — xác nhận bằng `python -m ml.infer.probe` trên workflow thật
-trước khi tin số đo.
+**Hệ toạ độ — đã kiểm chứng (2026-07-19):** toạ độ trả về nằm trong hệ toạ độ của
+**ảnh gốc**. Xác nhận bằng cách so `image.width/height` trong response với kích thước
+decode cục bộ (640×640 == 640×640). Nếu sau này bạn thêm bước resize/crop vào workflow
+thì giả định này hỏng — code sẽ **cảnh báo** khi hai kích thước lệch nhau, đừng bỏ qua
+dòng cảnh báo đó vì nó làm sai `size_mm` một cách âm thầm.
 
-**Bước bắt buộc lần đầu — dò tên output của workflow.** Response của Workflow API là
-một *list*, mỗi phần tử là dict khoá theo **tên output do chính workflow đặt** (không có
-khoá `predictions` cố định). Chạy lệnh probe một lần để xem cấu trúc thật (chỉ in tên
-khoá + kiểu, **không in blob base64**):
+**Bước bắt buộc lần đầu — dò tên output của workflow.** Không có khoá `predictions`
+cố định: mỗi phần tử được khoá theo **tên output do chính workflow đặt**. Chạy probe
+một lần để xem cấu trúc thật (chỉ in tên khoá + kiểu, **không in blob base64**):
 ```bash
 python -m ml.infer.probe path/to/anh.jpg
 ```
-Rồi điền tên khoá vừa thấy vào `roboflow.predictions_key` trong `ml/config.toml`
-(hỗ trợ đường dẫn có dấu chấm, vd `model_predictions.predictions`). Để trống thì
-code sẽ **tự dò** — probe sẽ cho biết tự dò có ra hay không.
+Rồi điền tên khoá vừa thấy vào `roboflow.predictions_key` (hỗ trợ đường dẫn có dấu
+chấm, vd `model_predictions.predictions`). Để trống thì code **tự dò**.
+
+Cấu trúc response thật (Roboflow serverless bọc kết quả trong `outputs`, khác với
+tài liệu chính thức mô tả là một list phẳng):
+```
+{"outputs": [{"<tên-output>": {"image": {...}, "predictions": [...]}}],
+ "profiler_trace": []}
+```
+Đây từng là một **bug thật**: lớp bọc `outputs` không được bóc, nên đặt
+`predictions_key` **đúng theo tài liệu** lại cho ra 0 hạt — và mẫu 0 hạt trong sổ
+audit trông y hệt nước sạch. Cơ chế tự dò che mất lỗi này. Giờ đã bóc đúng và
+cảnh báo khi `predictions_key` không khớp.
+
+**Đổi model mà không sửa workflow.** Nếu workflow khai `model_id` là `WorkflowParameter`,
+đặt nó trong `[roboflow.extra_inputs]` là xong — train model mới chỉ cần đổi một dòng
+config, không phải vào UI Roboflow:
+```toml
+[roboflow.extra_inputs]
+model_id = "microplastics-m7mf5-eallk/3"
+confidence = 0.5
+```
+`extra_inputs` cố ý là một bảng mở, không phải các trường đặt tên sẵn: workflow khai
+tham số gì là do người dựng workflow quyết. Xem workflow của bạn khai báo gì rồi điền
+đúng tên đó.
+
+> **Lưu ý về base workflow:** workflow do Roboflow tự sinh cho project (`… — Base
+> Workflow`) **hard-code `model_id` và bị platform khoá không cho sửa**
+> (`Cannot modify a project base workflow`). Muốn `model_id` đổi được thì phải **tự tạo
+> workflow riêng**. Đừng thử cách bọc base workflow bằng `inner_workflow` rồi truyền
+> `model_id` vào — workflow con không khai tham số đó nên sẽ lỗi 500 mọi lần gọi.
 
 ### Hướng 1 — tự train (CHƯA LÀM)
 
@@ -183,13 +252,16 @@ python -m ml.infer.preview --source webcam:0 --weights ml/models/best.pt --fps 2
 ```
 Preview cố ý không dùng backend `roboflow`: gọi API mỗi khung hình sẽ rất tốn và dễ đụng rate limit.
 
-### Kiểm thử end-to-end (thủ công, cần stack thật — CHƯA chạy được ở đây)
+### Kiểm thử end-to-end
+
+> **Hướng 2 đã chạy thật ngày 2026-07-19** với API key thật: 3 ảnh → Roboflow →
+> backend web → SQLite → dashboard. Kết quả 12/12/14 = 38 hạt, chạy lại ra
+> `0 created / 3 already_exists`, dashboard hiện `Màng 10/38 · 26%` khớp đúng số
+> detector trả về (fiber 9, film 10, fragment 10, pallet 9).
+> **Hướng 1 thì chưa** — chưa có weights.
 
 Bước này cần backend đã sẵn sàng (`python -m ml.infer --check-config [--backend ...]`
-phải báo `Config OK`) và backend web đang chạy — **không** chạy được trong môi trường
-CI/agent hiện tại (không có `ml/models/best.pt` thật, không có API key Roboflow thật,
-không có mạng ra ngoài); làm tay khi kiểm thử trên máy có đủ điều kiện. Kết quả dưới
-đây là **quy trình dự kiến**, không phải kết quả đã đo được.
+phải báo `Config OK`) và backend web đang chạy.
 
 1. Chạy backend web:
    ```bash
