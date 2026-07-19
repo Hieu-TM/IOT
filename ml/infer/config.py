@@ -16,6 +16,7 @@ TOML is parsed with the standard library `tomllib` (Python 3.11+), so this adds
 no third-party dependency.
 """
 
+import json
 import os
 import tomllib
 from pathlib import Path
@@ -52,6 +53,11 @@ DEFAULTS = {
         "confidence": 0.5,
         "timeout_s": 30,
         "retries": 2,
+        # Extra workflow inputs sent alongside the image, e.g. {"model_id": ...}.
+        # Deliberately an open dict: which parameters exist is decided by whoever
+        # built the workflow, so nothing is assumed here. TOML table
+        # [roboflow.extra_inputs]; as an env var, a JSON object.
+        "extra_inputs": {},
     },
     "dataset": {                          # Direction 1 — dataset download
         "workspace": "iam",
@@ -82,6 +88,12 @@ _NONE_DEFAULT_TYPES = {
     ("calibration", "px_per_mm"): float,
 }
 
+# Keys whose value is a structured object. From a TOML file they arrive already
+# parsed; from an env var they arrive as a JSON string and must be decoded.
+_JSON_ENV_KEYS = {
+    ("roboflow", "extra_inputs"),
+}
+
 
 def _deep_merge(base, override):
     out = {section: dict(values) for section, values in base.items()}
@@ -103,6 +115,13 @@ def _coerce(section, key, value):
     """Coerce an env-var string to the type of the matching DEFAULTS entry."""
     if not isinstance(value, str):
         return value
+    if (section, key) in _JSON_ENV_KEYS:
+        decoded = json.loads(value)
+        if not isinstance(decoded, dict):
+            raise ValueError(
+                f"AQUA_{section.upper()}_{key.upper()} must be a JSON object, "
+                f"got {type(decoded).__name__}")
+        return decoded
     default = DEFAULTS.get(section, {}).get(key)
     if default is None:
         caster = _NONE_DEFAULT_TYPES.get((section, key))

@@ -46,6 +46,7 @@ def main(argv=None):
         predictions_key=rf.get("predictions_key"),
         timeout=rf.get("timeout_s"),
         retries=rf.get("retries"),
+        extra_inputs=rf.get("extra_inputs"),
     )
 
     raw = detector.fetch_raw(Path(args.image).read_bytes())

@@ -188,7 +188,7 @@ class RoboflowWorkflowDetector:
     def __init__(self, api_key, workspace, workflow_id,
                  endpoint="https://serverless.roboflow.com",
                  image_input_name="image", predictions_key="",
-                 timeout=30, retries=2):
+                 timeout=30, retries=2, extra_inputs=None):
         if not api_key:
             raise ValueError(
                 "roboflow.api_key is required - set it in ml/config.local.toml "
@@ -203,6 +203,14 @@ class RoboflowWorkflowDetector:
         self.endpoint = str(endpoint).rstrip("/")
         self.image_input_name = image_input_name or "image"
         self.predictions_key = predictions_key or ""
+        self.extra_inputs = dict(extra_inputs or {})
+        # Letting an extra input reuse the image key would silently replace the
+        # image with a scalar and every frame would come back empty - a failure
+        # that looks exactly like "clean water" in the audit log. Refuse instead.
+        if self.image_input_name in self.extra_inputs:
+            raise ValueError(
+                f"roboflow.extra_inputs may not contain {self.image_input_name!r} - "
+                "that key carries the image itself.")
         self.timeout = timeout
         self.retries = retries
         self._warned_no_predictions = False
@@ -215,15 +223,14 @@ class RoboflowWorkflowDetector:
 
     def fetch_raw(self, image_bytes):
         """POST the image and return the parsed JSON response (used by the probe)."""
-        payload = {
-            "api_key": self.api_key,
-            "inputs": {
-                self.image_input_name: {
-                    "type": "base64",
-                    "value": base64.b64encode(image_bytes).decode("ascii"),
-                }
-            },
+        inputs = {
+            self.image_input_name: {
+                "type": "base64",
+                "value": base64.b64encode(image_bytes).decode("ascii"),
+            }
         }
+        inputs.update(self.extra_inputs)
+        payload = {"api_key": self.api_key, "inputs": inputs}
         last_error = None
         for attempt in range(self.retries + 1):
             try:

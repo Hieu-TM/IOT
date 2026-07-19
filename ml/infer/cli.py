@@ -58,6 +58,7 @@ def build_detector(cfg, backend, weights):
             predictions_key=rf.get("predictions_key"),
             timeout=rf.get("timeout_s"),
             retries=rf.get("retries"),
+            extra_inputs=rf.get("extra_inputs"),
         )
     return Detector(weights)
 

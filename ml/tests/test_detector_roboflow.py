@@ -78,6 +78,44 @@ def test_run_posts_workflow_envelope(monkeypatch):
     assert isinstance(image_input["value"], str) and image_input["value"]
 
 
+def test_run_sends_extra_inputs_alongside_the_image(monkeypatch):
+    """Workflow parameters (model_id, thresholds) ride in the same inputs dict."""
+    captured = {}
+
+    def fake_post(url, json=None, timeout=None):
+        captured["json"] = json
+        return _Resp([{}])
+
+    monkeypatch.setattr(rfmod.requests, "post", fake_post)
+
+    det = _detector(extra_inputs={"model_id": "proj/3", "confidence": 0.6})
+    det.run(_jpeg_bytes())
+
+    inputs = captured["json"]["inputs"]
+    assert inputs["model_id"] == "proj/3"
+    assert inputs["confidence"] == 0.6
+    assert inputs["image"]["type"] == "base64"
+
+
+def test_extra_inputs_may_not_shadow_the_image_key():
+    with pytest.raises(ValueError, match="carries the image itself"):
+        _detector(extra_inputs={"image": "oops"})
+
+
+def test_extra_inputs_defaults_to_empty(monkeypatch):
+    captured = {}
+
+    def fake_post(url, json=None, timeout=None):
+        captured["json"] = json
+        return _Resp([{}])
+
+    monkeypatch.setattr(rfmod.requests, "post", fake_post)
+
+    _detector().run(_jpeg_bytes())
+
+    assert list(captured["json"]["inputs"]) == ["image"]
+
+
 # --- prediction extraction (output names are NOT hard-coded) -------------
 
 def test_extract_with_explicit_key():

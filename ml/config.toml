@@ -48,6 +48,15 @@ confidence = 0.5                    # nguong tin cay - CHUA duoc dung, danh cho 
 timeout_s = 30                      # thoi gian cho goi API (giay)
 retries = 2                         # so lan thu lai khi loi
 
+# Tham so gui kem anh cho workflow. Ten tham so do NGUOI DUNG WORKFLOW dat,
+# nen o day khong gia dinh san cai nao - xem workflow cua ban khai bao gi.
+# Bien moi truong tuong duong: AQUA_ROBOFLOW_EXTRA_INPUTS='{"model_id":"..."}'
+# Workflow "aqua-scope-infer" nhan: model_id, confidence, iou_threshold,
+# class_agnostic_nms, max_detections.
+# DOI MODEL MOI = doi mot dong model_id o day, khong can sua gi tren Roboflow.
+# [roboflow.extra_inputs]
+# model_id = "microplastics-m7mf5-eallk/2"
+
 [dataset]
 # Huong 1 - tai dataset ve de tu train (weights KHONG tai duoc, nhung dataset thi duoc)
 workspace = "iam"                   # workspace Roboflow chua dataset

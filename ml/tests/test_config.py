@@ -1,3 +1,5 @@
+import pytest
+
 from ml.infer import config as cfgmod
 
 
@@ -37,6 +39,33 @@ def test_env_overrides_files_and_coerces_types(tmp_path):
     assert cfg.get("roboflow", "api_key") == "from-env"
     assert cfg.get("train", "epochs") == 42          # coerced str -> int
     assert isinstance(cfg.get("train", "epochs"), int)
+
+
+def test_extra_inputs_table_loads_from_toml(tmp_path):
+    _write(tmp_path / "config.toml",
+           '[roboflow.extra_inputs]\nmodel_id = "proj/3"\nconfidence = 0.6\n')
+    cfg = cfgmod.load(tmp_path / "config.toml", env={})
+    assert cfg.get("roboflow", "extra_inputs") == {"model_id": "proj/3",
+                                                   "confidence": 0.6}
+
+
+def test_extra_inputs_defaults_to_empty_dict(tmp_path):
+    cfg = cfgmod.load(tmp_path / "missing.toml", env={})
+    assert cfg.get("roboflow", "extra_inputs") == {}
+
+
+def test_extra_inputs_env_var_is_json(tmp_path):
+    cfg = cfgmod.load(
+        tmp_path / "missing.toml",
+        env={"AQUA_ROBOFLOW_EXTRA_INPUTS": '{"model_id": "proj/4"}'},
+    )
+    assert cfg.get("roboflow", "extra_inputs") == {"model_id": "proj/4"}
+
+
+def test_extra_inputs_env_var_rejects_non_object(tmp_path):
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        cfgmod.load(tmp_path / "missing.toml",
+                    env={"AQUA_ROBOFLOW_EXTRA_INPUTS": '["a"]'})
 
 
 def test_env_coerces_bool_and_float(tmp_path):
