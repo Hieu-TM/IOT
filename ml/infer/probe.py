@@ -16,6 +16,7 @@ from . import config as config_mod
 from .detector_roboflow import (
     RoboflowWorkflowDetector,
     extract_predictions,
+    response_entries,
     summarize_response,
 )
 
@@ -52,7 +53,9 @@ def main(argv=None):
     print("\n--- response structure (long values elided) ---")
     print(summarize_response(raw))
 
-    entries = raw if isinstance(raw, list) else [raw]
+    # Same unwrapping the real run path uses - otherwise the probe would report
+    # that a CORRECT predictions_key resolves nothing.
+    entries = response_entries(raw)
     key = rf.get("predictions_key")
     found = extract_predictions(entries[0] if entries else {}, key)
     print(f"\nResolved {len(found)} prediction(s) with predictions_key={key!r}")
