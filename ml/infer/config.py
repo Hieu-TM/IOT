@@ -33,6 +33,12 @@ DEFAULTS = {
         "batch_lot": None,
         "timeout_s": 30,
     },
+    "station": {                          # ESP32-CAM đọc ảnh trực tiếp
+        "host": "",                       # IP/hostname board, lấy từ Serial Monitor
+        "timeout_s": 20,                  # UXGA qua WiFi có thể lâu
+        "retries": 3,                     # số lần thử lại mỗi khung
+        "interval_s": 2.0,                # nghỉ giữa hai lần chụp
+    },
     "calibration": {
         # Intentionally None: an unset px_per_mm makes the CLI print the
         # "size_mm is a PLACEHOLDER" honesty warning. Only set this once you have
@@ -166,6 +172,15 @@ class Config:
         Empty list == ready to run with this backend.
         """
         problems = []
+        if backend == "station":
+            # Trực giao với backend suy luận: chỉ kiểm tra nguồn ảnh có địa chỉ
+            # hay chưa. CLI gọi riêng missing_for("station") cùng với
+            # missing_for(<backend thật>) khi chạy --from-board.
+            if not self.get("station", "host"):
+                problems.append(
+                    "station.host chưa đặt - IP của board, lấy từ Serial Monitor "
+                    "(hoặc dùng cờ --from-board <ip>).")
+            return problems
         if backend == "roboflow":
             if not self.get("roboflow", "api_key"):
                 problems.append(

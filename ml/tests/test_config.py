@@ -147,3 +147,22 @@ def test_env_leaves_batch_lot_as_string(tmp_path):
                       env={"AQUA_INGEST_BATCH_LOT": "123"})
     assert cfg.get("ingest", "batch_lot") == "123"
     assert isinstance(cfg.get("ingest", "batch_lot"), str)
+
+
+def test_station_defaults_present():
+    cfg = cfgmod.load(config_path="ml/config.toml", env={})
+    assert cfg.get("station", "timeout_s") == 20
+    assert cfg.get("station", "retries") == 3
+    assert cfg.get("station", "interval_s") == 2.0
+
+
+def test_missing_for_station_flags_empty_host():
+    cfg = cfgmod.Config({"station": {"host": ""}})
+    problems = cfg.missing_for("station")
+    assert len(problems) == 1
+    assert "station.host" in problems[0]
+
+
+def test_missing_for_station_ok_when_host_set():
+    cfg = cfgmod.Config({"station": {"host": "192.168.1.50"}})
+    assert cfg.missing_for("station") == []

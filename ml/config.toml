@@ -19,6 +19,14 @@ device_id = "pc-infer"              # ghi vao ban ghi audit
 # batch_lot = "LOT-001"             # tuy chon: ma lo san xuat
 timeout_s = 30                      # thoi gian cho (giay) - CHUA duoc dung, danh cho sau nay
 
+[station]
+# Doc anh THANG tu board ESP32-CAM (che do --from-board), thay vi doc thu muc.
+# Truc giao voi general.backend: van chay duoc ca "local" lan "roboflow".
+host = ""          # IP hoac hostname board, lay tu Serial Monitor
+timeout_s = 20     # timeout moi request (UXGA qua WiFi co the lau)
+retries = 3        # so lan thu lai moi khung anh truoc khi bo qua
+interval_s = 2.0   # nghi giua hai lan chup (giay)
+
 [calibration]
 # CO Y DE TRONG. Chua set => CLI se in canh bao "size_mm la PLACEHOLDER,
 # khong phai hieu chuan that". Chi set khi ban DA DO duoc px/mm that tren rig.
