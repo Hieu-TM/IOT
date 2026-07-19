@@ -23,9 +23,9 @@ DATABASE_URL = f"sqlite:///{DB_PATH.as_posix()}"
 # Default calibration (~14 px/mm at VGA, ~40mm working distance — CLAUDE.md).
 PX_PER_MM_DEFAULT = 14.0
 
-# Provisional class list from ai_model_plan.md — NOT enforced as a DB enum
-# so the list can change without a schema migration (§2.1, §3, §10).
-CLASS_LIST = ["plastic", "bubble", "organic", "fiber", "unknown"]
+# The deployed detector's classes. All four are microplastic MORPHOLOGIES - the model
+# has no non-plastic class, so it cannot distinguish plastic from bubbles/organics.
+CLASS_LIST = ["fiber", "film", "fragment", "pallet", "unknown"]
 
 # Below this confidence the device/mock relabels a particle as "unknown"
 # (backend only stores the final label — §2.1).

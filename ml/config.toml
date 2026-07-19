@@ -1,0 +1,76 @@
+# Aqua Scope — cau hinh tap trung cho package ml/
+#
+# Thu tu uu tien (cao thang thap):
+#   co CLI  >  bien moi truong  >  config.local.toml  >  file nay  >  mac dinh trong code
+#
+# File NAY duoc commit: chi chua gia tri KHONG bi mat, va tai lieu hoa moi khoa.
+# Bi mat (API key) -> dat trong ml/config.local.toml (da gitignore) hoac bien moi truong.
+# Ten bien moi truong: AQUA_<SECTION>_<KEY>, vd AQUA_ROBOFLOW_API_KEY.
+
+[general]
+# Chon huong chay:
+#   "local"    = Huong 1 - model .pt tu train (can weights, chay offline, xuong duoc chip)
+#   "roboflow" = Huong 2 - goi API Roboflow (khong can weights, can mang + api_key)
+backend = "local"
+
+[ingest]
+api_url = "http://localhost:8000"   # backend web nhan ket qua
+device_id = "pc-infer"              # ghi vao ban ghi audit
+# batch_lot = "LOT-001"             # tuy chon: ma lo san xuat
+timeout_s = 30                      # thoi gian cho (giay) - CHUA duoc dung, danh cho sau nay
+
+[calibration]
+# CO Y DE TRONG. Chua set => CLI se in canh bao "size_mm la PLACEHOLDER,
+# khong phai hieu chuan that". Chi set khi ban DA DO duoc px/mm that tren rig.
+# px_per_mm = 14.0
+
+[local]
+# Huong 1 - weights tu train. Tao ra bang (xem README.md):
+#   pip install ultralytics
+#   python ml/train_detector.py --data ml/datasets/<version>/data.yaml --model yolo11n.pt
+weights = "ml/models/best.pt"       # duong dan den file model .pt
+confidence = 0.25                   # nguong tin cay - CHUA duoc dung, danh cho sau nay
+
+[roboflow]
+# Huong 2 - hosted Workflow API. KHONG dien api_key vao day (file nay duoc commit).
+# Dat trong ml/config.local.toml hoac: export AQUA_ROBOFLOW_API_KEY=...
+api_key = ""
+endpoint = "https://serverless.roboflow.com"  # URL diem cuoi API Roboflow
+workspace = ""                      # workspace slug, lay tu URL workflow cua ban
+workflow_id = ""                    # workflow SLUG (khong phai document id)
+image_input_name = "image"          # ten input anh ma workflow khai bao
+# Ten khoa output chua predictions trong response cua workflow.
+# De TRONG => tu do tim. Chay lenh sau de xem cau truc response that:
+#   python -m ml.infer.probe <anh.jpg>
+# roi dien ten khoa vao day, vd "model_predictions" hoac "model_predictions.predictions"
+predictions_key = ""
+confidence = 0.5                    # nguong tin cay - CHUA duoc dung, danh cho sau nay
+timeout_s = 30                      # thoi gian cho goi API (giay)
+retries = 2                         # so lan thu lai khi loi
+
+# Tham so gui kem anh cho workflow. Ten tham so do NGUOI DUNG WORKFLOW dat,
+# nen o day khong gia dinh san cai nao - xem workflow cua ban khai bao gi.
+# Bien moi truong tuong duong: AQUA_ROBOFLOW_EXTRA_INPUTS='{"model_id":"..."}'
+# Workflow "aqua-scope-infer" nhan: model_id, confidence, iou_threshold,
+# class_agnostic_nms, max_detections.
+# DOI MODEL MOI = doi mot dong model_id o day, khong can sua gi tren Roboflow.
+# [roboflow.extra_inputs]
+# model_id = "microplastics-m7mf5-eallk/2"
+
+[dataset]
+# Huong 1 - tai dataset ve de tu train (weights KHONG tai duoc, nhung dataset thi duoc)
+workspace = "iam"                   # workspace Roboflow chua dataset
+project = "microplastics-m7mf5"     # ten du an trong workspace
+version = 1                         # phien ban dataset can tai
+format = "yolov11"                  # dinh dang dataset (yolov11)
+out_dir = "ml/datasets"             # thu muc luu dataset tren may nay
+
+[train]
+base_model = "yolo11n.pt"           # mo hinh goc can tai ve de fine-tune
+epochs = 100                        # so vong hoc
+imgsz = 416                         # kich thuoc anh nhap (pixel)
+batch = 16                          # kich thuoc lo hang
+
+[export]
+tflite_imgsz = 192                  # nho nhat ma van phan giai duoc hat ~2mm
+int8 = true                         # lam luong tu 8 bit de giam kich thuoc mo hinh

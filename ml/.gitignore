@@ -1,0 +1,11 @@
+# Model weights tai/export tu Roboflow — tai tao duoc, dung commit (phinh repo).
+# Ghi NGUON (project + version Roboflow) trong README.md thay vi commit binary.
+models/
+datasets/
+runs/
+infer_out/
+*.pt
+*.tflite
+
+# Cau hinh cuc bo: chua API key + ghi de theo may. KHONG commit.
+config.local.toml
