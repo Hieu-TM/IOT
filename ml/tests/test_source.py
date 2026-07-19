@@ -1,11 +1,13 @@
 import io
 import json
 import threading
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 from PIL import Image
 
+import ml.infer.source as source_module
 from ml.infer.source import Esp32CaptureSource, FolderSource, Frame, StationError
 
 
@@ -123,6 +125,23 @@ class _FakeBoard:
             handler.send_header("Content-Length", str(len(body)))
             handler.end_headers()
             handler.wfile.write(body)
+        elif kind == "500":
+            body = b"internal server error"
+            handler.send_response(500)
+            handler.send_header("Content-Type", "text/plain")
+            handler.send_header("Content-Length", str(len(body)))
+            handler.end_headers()
+            handler.wfile.write(body)
+        elif kind == "jpeg_truncated":
+            # JPEG hợp lệ nhưng bị cắt mất đuôi: có magic \xff\xd8 mở đầu,
+            # không có marker \xff\xd9 kết thúc — mô phỏng kết nối đứt giữa
+            # chừng lúc board đang gửi ảnh.
+            body = payload[:-10]
+            handler.send_response(200)
+            handler.send_header("Content-Type", "image/jpeg")
+            handler.send_header("Content-Length", str(len(body)))
+            handler.end_headers()
+            handler.wfile.write(body)
 
     def __enter__(self):
         threading.Thread(target=self._server.serve_forever, daemon=True).start()
@@ -188,7 +207,11 @@ def test_server_dies_midway_yields_earlier_frames():
     board = _FakeBoard([("jpeg", _jpeg_bytes())],
                        device_response=("json", _DEVICE_JSON))
     with board:
-        src = Esp32CaptureSource(board.host, count=3, interval_s=0, retries=1)
+        # timeout_s=1 (thay vì mặc định 20s): hai khung sau khi board chết
+        # đều phải chờ hết ReadTimeout mới bị bỏ qua; 20s x 2 khung sẽ làm
+        # riêng test này tốn ~40s. Giá trị nhỏ vẫn chứng minh đúng hành vi.
+        src = Esp32CaptureSource(board.host, count=3, interval_s=0, retries=1,
+                                 timeout_s=1)
         frames = []
         for i, frame in enumerate(src.frames()):
             frames.append(frame)
@@ -200,3 +223,80 @@ def test_server_dies_midway_yields_earlier_frames():
     # luôn được append trước khi shutdown.)
     assert len(frames) == 1
     assert frames[0].image_bytes[:2] == b"\xff\xd8"
+
+
+def test_truncated_jpeg_frame_is_skipped():
+    # Ca thứ ba mà docstring _FakeBoard tự khai ("body cụt") nhưng trước đây
+    # chưa có test nào tái hiện: JPEG có magic mở đầu đúng nhưng thiếu marker
+    # kết thúc \xff\xd9 — nhánh "JPEG cụt" trong _capture_once() phải chạy.
+    with _FakeBoard([("jpeg_truncated", _jpeg_bytes())],
+                    device_response=("json", _DEVICE_JSON)) as board:
+        src = Esp32CaptureSource(board.host, count=1, interval_s=0, retries=2)
+        assert list(src.frames()) == []      # khung cụt không được lọt qua
+        assert board.capture_hits == 2       # đã thử lại đủ số lần
+
+
+def test_device_html_body_raises_station_error():
+    # /device trả HTML (không parse được thành JSON) — phải dừng cả lượt,
+    # không được coi như board tới được rồi lặng lẽ tiếp tục.
+    with _FakeBoard([("jpeg", _jpeg_bytes())],
+                    device_response=("html200", None)) as board:
+        with pytest.raises(StationError) as exc:
+            Esp32CaptureSource(board.host, count=1, interval_s=0, retries=1)
+        assert "/device" in str(exc.value)
+
+
+def test_device_json_array_is_rejected_not_a_dict():
+    # /device trả JSON hợp lệ nhưng không phải object (một mảng) — nhánh
+    # `isinstance(info, dict)` trước đây chưa từng được test chạy tới.
+    with _FakeBoard([("jpeg", _jpeg_bytes())],
+                    device_response=("json", [1, 2, 3])) as board:
+        with pytest.raises(StationError) as exc:
+            Esp32CaptureSource(board.host, count=1, interval_s=0, retries=1)
+        assert "không phải object" in str(exc.value)
+
+
+def test_device_json_number_is_rejected_not_a_dict():
+    # Cùng nhánh như trên nhưng với một kiểu JSON hợp lệ khác không phải dict.
+    with _FakeBoard([("jpeg", _jpeg_bytes())],
+                    device_response=("json", 42)) as board:
+        with pytest.raises(StationError) as exc:
+            Esp32CaptureSource(board.host, count=1, interval_s=0, retries=1)
+        assert "không phải object" in str(exc.value)
+
+
+def test_device_http_error_status_raises_station_error():
+    # /device trả HTTP lỗi (500) — board tới được nhưng nó tự báo hỏng.
+    with _FakeBoard([("jpeg", _jpeg_bytes())],
+                    device_response=("500", None)) as board:
+        with pytest.raises(StationError) as exc:
+            Esp32CaptureSource(board.host, count=1, interval_s=0, retries=1)
+        assert "/device" in str(exc.value)
+
+
+def test_sample_code_does_not_collide_when_clock_stands_still(monkeypatch):
+    # Ép đồng hồ hệ thống đứng yên (nhiều khung liền nhau rơi vào cùng một
+    # mili-giây, đúng ca interval_s=0 hoặc máy đủ nhanh). Nếu code cũ
+    # (_station_sample_code() dùng thẳng, không chống trùng) thì test này
+    # FAIL thật: cả hai frame sẽ có cùng sample_code, và ingest sẽ coi khung
+    # thứ hai là bản retry rồi âm thầm bỏ nó đi.
+    frozen = datetime(2026, 7, 19, 12, 0, 0, tzinfo=timezone.utc)
+
+    class _FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen
+
+    monkeypatch.setattr(source_module, "datetime", _FrozenDatetime)
+
+    with _FakeBoard([("jpeg", _jpeg_bytes())],
+                    device_response=("json", _DEVICE_JSON)) as board:
+        src = Esp32CaptureSource(board.host, count=3, interval_s=0)
+        frames = list(src.frames())
+
+    assert len(frames) == 3
+    codes = [f.sample_code for f in frames]
+    assert len(set(codes)) == 3, f"sample_code trùng nhau: {codes}"
+    for code in codes:
+        assert 1 <= len(code) <= 64
+        assert all(c.isalnum() or c in "._-" for c in code)

@@ -71,22 +71,41 @@ class Esp32CaptureSource:
         self.interval_s = float(interval_s)
         self.timeout_s = float(timeout_s)
         self.retries = max(1, int(retries))
+        # Mã đã phát ra trong lượt đo này, để _next_sample_code() chống trùng
+        # (xem docstring của hàm đó vì sao không thể dựa vào đồng hồ hệ thống).
+        self._used_sample_codes = set()
         self.device_info = self._read_device()
 
     def _read_device(self):
+        """Đọc /device, thử lại tối đa self.retries lần trước khi bỏ cuộc.
+
+        Cố ý dùng `retries` ở đây (không phải chỉ để dành riêng cho
+        /capture): cùng một brownout WiFi lúc board mới cấp nguồn có thể làm
+        /device timeout hoặc trả JSON cụt, y hệt lý do /capture cần thử lại.
+        Không tách lỗi mạng và lỗi JSON parse thành hai nhánh retry khác nhau
+        — cùng một nguyên nhân (mất gói giữa chừng) có thể biểu hiện thành cả
+        hai, và cả hai đều đáng thử lại như nhau. Ngược lại, JSON hợp lệ
+        nhưng SAI HÌNH DẠNG (không phải object) không phải lỗi thoáng qua —
+        đó là firmware trả sai, thử lại không giúp gì nên raise ngay, không
+        đếm vào vòng lặp retry.
+        """
         url = f"{self.base_url}/device"
-        try:
-            resp = requests.get(url, timeout=self.timeout_s)
-            resp.raise_for_status()
-            info = resp.json()
-        except Exception as exc:
-            raise StationError(
-                f"không đọc được {url}: {exc}. Kiểm tra board đã bật, đúng IP, "
-                f"và đã nạp firmware/aqua_scope_station."
-            ) from exc
-        if not isinstance(info, dict):
-            raise StationError(f"{url} trả về JSON không phải object: {info!r}")
-        return info
+        last_exc = None
+        for _attempt in range(self.retries):
+            try:
+                resp = requests.get(url, timeout=self.timeout_s)
+                resp.raise_for_status()
+                info = resp.json()
+            except Exception as exc:
+                last_exc = exc
+                continue
+            if not isinstance(info, dict):
+                raise StationError(f"{url} trả về JSON không phải object: {info!r}")
+            return info
+        raise StationError(
+            f"không đọc được {url}: {last_exc}. Kiểm tra board đã bật, đúng IP, "
+            f"và đã nạp firmware/aqua_scope_station."
+        ) from last_exc
 
     @property
     def device_id(self):
@@ -123,7 +142,10 @@ class Esp32CaptureSource:
                 try:
                     body = self._capture_once()
                     break
-                except Exception as exc:
+                except (StationError, requests.RequestException) as exc:
+                    # Chỉ nuốt lỗi mạng/board — lỗi lập trình thật (AttributeError,
+                    # TypeError, ...) phải nổi lên chứ không được báo chung chung
+                    # là "khung hỏng, bỏ qua".
                     last_error = exc
 
             if body is None:
@@ -133,17 +155,43 @@ class Esp32CaptureSource:
             captured_at = datetime.now(timezone.utc)
             yield Frame(
                 image_bytes=body,
-                sample_code=_station_sample_code(captured_at),
+                sample_code=self._next_sample_code(captured_at),
                 captured_at=captured_at,
                 source_name=f"{self.base_url}/capture#{i + 1}",
             )
 
+    def _next_sample_code(self, captured_at):
+        """Sinh sample_code cho một khung, đảm bảo KHÔNG trùng với bất kỳ mã
+        nào đã phát ra trong cùng lượt đo (self._used_sample_codes).
+
+        QUAN TRỌNG — vì sao không được rút gọn về `_station_sample_code()`
+        đơn thuần: web/backend/app/routers/ingest.py coi sample_code trùng
+        là một bản RETRY và trả về already_exists — KHÔNG báo lỗi. Nếu hai
+        khung liên tiếp sinh trùng mã, khung thứ hai sẽ bị ingest âm thầm bỏ
+        qua như thể nó là bản gửi lại của khung đầu, và dữ liệu mất khỏi sổ
+        audit mà không ai biết. Độ phân giải mili-giây của đồng hồ hệ thống
+        KHÔNG đủ đảm bảo khác nhau khi interval_s=0, máy chạy đủ nhanh, hoặc
+        ai đó hạ interval_s mặc định sau này — nên phải chống trùng bằng cấu
+        trúc dữ liệu ở đây, không dựa vào may mắn của đồng hồ.
+        """
+        base = _station_sample_code(captured_at)
+        code = base
+        suffix = 2
+        while code in self._used_sample_codes:
+            code = f"{base}-{suffix}"
+            suffix += 1
+        self._used_sample_codes.add(code)
+        return code
+
 
 def _station_sample_code(captured_at):
-    """`S{yyyyMMdd}-{HHmmss}-{mmm}` — đủ mịn để hai khung liền nhau không trùng.
+    """`S{yyyyMMdd}-{HHmmss}-{mmm}` từ thời điểm chụp.
 
-    Cùng dạng với mã do server sinh (web/backend/app/routers/ingest.py), và
-    khớp sẵn ^[A-Za-z0-9._-]{1,64}$ nên không cần làm sạch thêm.
+    CHỈ định dạng theo giờ chụp — KHÔNG tự đảm bảo duy nhất giữa hai lần gọi
+    liên tiếp (xem Esp32CaptureSource._next_sample_code(), nơi chống trùng
+    thật sự xảy ra). Cùng dạng với mã do server sinh
+    (web/backend/app/routers/ingest.py), và khớp sẵn
+    ^[A-Za-z0-9._-]{1,64}$ nên hậu tố "-N" nếu có cũng không cần làm sạch thêm.
     """
     return (f"S{captured_at:%Y%m%d}-{captured_at:%H%M%S}-"
             f"{captured_at.microsecond // 1000:03d}")
