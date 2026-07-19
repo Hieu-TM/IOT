@@ -14,7 +14,7 @@ from .detector_roboflow import RoboflowWorkflowDetector
 from .ingest_client import post
 from .mapper import build_metadata
 from .naming import resolve_px_per_mm
-from .source import FolderSource
+from .source import Esp32CaptureSource, FolderSource, StationError
 
 
 def build_arg_parser():
@@ -34,6 +34,13 @@ def build_arg_parser():
     p.add_argument("--device-id", default=None)
     p.add_argument("--px-per-mm", type=float, default=None)
     p.add_argument("--batch-lot", default=None)
+    p.add_argument("--from-board", default=None, metavar="HOST",
+                   help="Chụp thẳng từ ESP32-CAM (IP/hostname) thay vì đọc "
+                        "thư mục ảnh. Mặc định lấy từ [station].host.")
+    p.add_argument("--count", type=int, default=None,
+                   help="Số khung chụp ở chế độ --from-board (mặc định 1)")
+    p.add_argument("--interval", type=float, default=None,
+                   help="Giây nghỉ giữa hai lần chụp (mặc định [station].interval_s)")
     p.add_argument("--dry-run", action="store_true",
                    help="Detect and print only; do not POST to the API")
     p.add_argument("--check-config", action="store_true",
@@ -72,6 +79,12 @@ def main(argv=None):
     if args.check_config:
         problems = cfg.missing_for(backend)
         print(f"backend = {backend}")
+        # Nguồn ảnh trực giao với backend suy luận: chỉ soi khi người dùng thực
+        # sự định chụp từ board, chứ không bắt ai chạy thư mục ảnh phải khai host.
+        if args.from_board or cfg.get("station", "host"):
+            host = args.from_board or cfg.get("station", "host")
+            print(f"station = {host or '(chưa đặt)'}")
+            problems = problems + cfg.missing_for("station")
         if problems:
             print("Config NOT ready:")
             for p in problems:
@@ -80,8 +93,16 @@ def main(argv=None):
         print("Config OK - ready to run.")
         return 0
 
-    if not args.input:
-        print("[error] missing input (image file or folder). See --help.")
+    station_host = (args.from_board if args.from_board is not None
+                    else cfg.get("station", "host"))
+
+    if args.input and args.from_board:
+        print("[error] chọn MỘT trong hai: thư mục ảnh, hoặc --from-board <ip>. "
+              "Đưa cả hai thì không rõ định lấy ảnh từ đâu.")
+        return 2
+    if not args.input and not station_host:
+        print("[error] chưa có nguồn ảnh. Đưa thư mục ảnh, hoặc dùng "
+              "--from-board <ip> (hoặc đặt [station].host trong ml/config.toml).")
         return 2
 
     api_url = args.api_url if args.api_url is not None else cfg.get("ingest", "api_url")
@@ -104,7 +125,31 @@ def main(argv=None):
             print(f"  - {problem}")
         print("Run `python -m ml.infer --check-config` after fixing.")
         return 2
-    source = FolderSource(args.input)
+    if args.input:
+        source = FolderSource(args.input)
+    else:
+        station = cfg.section("station")
+        try:
+            source = Esp32CaptureSource(
+                station_host,
+                count=args.count if args.count is not None else 1,
+                interval_s=(args.interval if args.interval is not None
+                            else station.get("interval_s")),
+                timeout_s=station.get("timeout_s"),
+                retries=station.get("retries"),
+            )
+        except StationError as exc:
+            print(f"[error] {exc}")
+            return 2
+        print(f"[station] {source.device_id or '(không rõ device_id)'} @ "
+              f"{station_host} | firmware={source.device_info.get('firmware')}")
+        if source.device_info.get("prefs_saved") is False:
+            print("[warn] board CHƯA lưu cấu hình camera vào flash. Sau khi mất "
+                  "điện nó sẽ về mặc định — canh sáng lại rồi gọi "
+                  f"http://{station_host}/control?var=save&val=1")
+        # device_id của board thắng hằng trong config, nhưng cờ tay vẫn thắng cả hai.
+        if args.device_id is None and source.device_id:
+            device_id = source.device_id
 
     created = already = failed = 0
     collisions = 0

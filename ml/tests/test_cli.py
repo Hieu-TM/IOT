@@ -301,3 +301,17 @@ def test_cli_reports_actionable_error_when_roboflow_unconfigured(tmp_path, capsy
     assert "cannot start backend" in out
     assert "api_key" in out
     assert "--check-config" in out
+
+
+def test_from_board_and_folder_together_is_rejected(tmp_path, capsys):
+    rc = cli.main([str(tmp_path), "--from-board", "192.168.1.50"])
+    out = capsys.readouterr().out
+    assert rc == 2
+    assert "--from-board" in out
+
+
+def test_no_input_and_no_station_host_reports_both_options(capsys):
+    rc = cli.main([])
+    out = capsys.readouterr().out
+    assert rc == 2
+    assert "--from-board" in out
