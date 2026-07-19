@@ -32,6 +32,7 @@
 
 #include "esp_camera.h"
 
+#include "aqua_device.h"
 #include "aqua_prefs.h"
 #include "board_config.h"
 
@@ -168,6 +169,8 @@ void setup() {
     Serial.println("Dừng lại: không có mạng thì laptop không kéo ảnh được.");
     return;
   }
+
+  aquaDeviceInit();  // sau WiFi: MAC chỉ đọc được khi WiFi stack đã chạy
 
   startCameraServer();
 
