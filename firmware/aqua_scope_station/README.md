@@ -75,11 +75,6 @@ Chưa chạy đủ 7 mục này thì **chưa được nói firmware "chạy đư
       không có dòng nào ghi vào DB
 - [ ] 7. Bỏ `--dry-run` → 3 mẫu hiện trên dashboard, cột device_id đúng tên board
 
-> **Mục 6–7 chưa chạy được ngay.** Cờ `--from-board` đang được thêm vào
-> `ml.infer` (Task 6–9 của plan). Chạy bây giờ sẽ báo
-> `unrecognized arguments: --from-board` — đó là *chưa tới lượt*, không phải lỗi
-> firmware. Mục 1–5 kiểm được ngay sau khi nạp. Xóa ghi chú này khi Task 8 xong.
-
 ## Chưa có (cố ý)
 
 Điều khiển đèn nền (đèn cắm thẳng, luôn sáng), điều khiển bơm, suy luận

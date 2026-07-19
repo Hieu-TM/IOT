@@ -129,6 +129,3 @@ Hai công cụ, hai mục đích, cố ý không gộp:
 
 Gộp lại sẽ buộc công cụ thu dataset phải mang theo cả detector lẫn kết nối DB
 — hai thứ nó không cần.
-
-> **`--from-board` đang được thêm vào** (Task 6–9 của plan firmware). Tới khi
-> xong, chỉ `collect_dataset.py` ở cột trái là chạy được.

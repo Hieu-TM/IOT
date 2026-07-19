@@ -91,7 +91,7 @@ per-particle (ghi rõ hạn chế này, không âm thầm bỏ qua).
 
 ## Chạy nhanh
 
-Ba bước, từ thư mục gốc repo:
+### Đo mẫu thật từ board (đường chạy chính)
 
 ```bash
 # 1. Bật backend web (terminal riêng)
@@ -100,17 +100,29 @@ cd web/backend && python -m uvicorn app.main:app --port 8000
 # 2. Kiểm tra cấu hình — không gọi API, không in API key
 python -m ml.infer --check-config
 
-# 3. Chạy
+# 3. Chụp từ board → suy luận → ghi sổ audit, một lệnh
+python -m ml.infer --from-board 192.168.1.50 --count 5 --interval 2
+```
+
+Board phải chạy [`firmware/aqua_scope_station/`](../firmware/aqua_scope_station/).
+IP lấy từ Serial Monitor 115200. Đặt `[station].host` trong `ml/config.local.toml`
+thì khỏi gõ `--from-board` mỗi lần.
+
+`device_id` ghi vào sổ audit là **tên board tự báo** (ví dụ `aqua-cam-a1b2c3`),
+không phải hằng `ingest.device_id` — trừ khi bạn ép bằng `--device-id`.
+
+### Chạy lại trên ảnh đã có
+
+```bash
 python -m ml.infer <thư-mục-ảnh>            # ghi vào DB
 python -m ml.infer <thư-mục-ảnh> --dry-run  # chỉ đếm thử, KHÔNG ghi
 ```
 
 Dashboard: `http://localhost:8000`
 
-Không cần cờ `--backend` nếu `ml/config.local.toml` đã khai `general.backend`.
-
-**Dùng `--dry-run` khi thử nghiệm.** DB là sổ audit truy xuất nguồn gốc — mỗi lần
-chạy thật là một bản ghi vĩnh viễn, không nên tạo rác trong đó.
+**Dùng `--dry-run` khi thử nghiệm.** DB là sổ audit truy xuất nguồn gốc — mỗi
+lần chạy thật là một bản ghi vĩnh viễn, không nên tạo rác trong đó. `--dry-run`
+vẫn chụp thật từ board nhưng không gửi gì đi.
 
 Hai điều phải nhớ khi đọc kết quả:
 
