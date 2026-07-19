@@ -175,8 +175,13 @@ static esp_err_t capture_handler(httpd_req_t *req) {
   fb = esp_camera_fb_get();
 
   if (!fb) {
+    // 503 chứ không 500: đây là hỏng TẠM THỜI (thường do brownout khi WiFi TX
+    // và chụp UXGA trùng nhau). Client nên thử lại khung này, không nên coi là
+    // board hỏng. Kèm thân lý do để log phía PC nói được điều gì đã xảy ra.
     log_e("Camera capture failed");
-    httpd_resp_send_500(req);
+    httpd_resp_set_status(req, "503 Service Unavailable");
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_sendstr(req, "camera capture failed (esp_camera_fb_get tra NULL)");
     return ESP_FAIL;
   }
 

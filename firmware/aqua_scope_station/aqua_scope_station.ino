@@ -31,6 +31,7 @@
 #include <WiFi.h>
 
 #include "esp_camera.h"
+#include "esp_task_wdt.h"
 
 #include "aqua_device.h"
 #include "aqua_prefs.h"
@@ -118,6 +119,20 @@ static bool connectWiFi() {
   }
 
   WiFi.mode(WIFI_STA);
+
+  // Tự nối lại khi router chớp nguồn hoặc sóng rớt. Đặt TRƯỚC begin() để
+  // không bỏ lỡ sự kiện disconnect đầu tiên.
+  WiFi.setAutoReconnect(true);
+  WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
+    Serial.println("[WiFi] mất kết nối — đang nối lại...");
+    WiFi.reconnect();
+  }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+
+  WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
+    Serial.printf("[WiFi] đã nối lại | IP: %s\n",
+                  WiFi.localIP().toString().c_str());
+  }, ARDUINO_EVENT_WIFI_STA_GOT_IP);
+
   WiFi.begin(STA_SSID, STA_PASS);
   WiFi.setSleep(false);  // sleep làm /capture trễ và hay timeout khi kéo liên tục
 
@@ -166,8 +181,11 @@ void setup() {
 #endif
 
   if (!connectWiFi()) {
-    Serial.println("Dừng lại: không có mạng thì laptop không kéo ảnh được.");
-    return;
+    // KHÔNG return: WiFi event handler ở trên vẫn tiếp tục thử nối lại. Dừng
+    // setup() ở đây sẽ khiến board đứng im tới khi có người rút điện — không
+    // chấp nhận được với trạm chạy dài.
+    Serial.println("[CẢNH BÁO] Chưa nối được WiFi. Vẫn chạy tiếp và thử lại nền.");
+    Serial.println("           Server sẽ phục vụ được ngay khi có IP.");
   }
 
   aquaDeviceInit();  // sau WiFi: MAC chỉ đọc được khi WiFi stack đã chạy
@@ -178,13 +196,32 @@ void setup() {
   Serial.printf("\nSẵn sàng. Web UI:  http://%s/\n", ip.toString().c_str());
   Serial.printf("Thu dataset:       python collect_dataset.py --host %s\n\n",
                 ip.toString().c_str());
+
+  // Watchdog 30s cho task loop: nếu loop treo, board tự reset thay vì đứng câm.
+  // 30s rộng rãi so với nhịp báo cáo 10s bên dưới.
+  esp_task_wdt_config_t wdtConfig = {
+    .timeout_ms = 30000,
+    .idle_core_mask = 0,
+    .trigger_panic = true,
+  };
+  esp_task_wdt_init(&wdtConfig);
+  esp_task_wdt_add(NULL);
 }
 
 void loop() {
-  // Server chạy ở task riêng của esp_http_server; loop chỉ báo trạng thái sóng
-  // để soi khi /capture bị timeout giữa phiên thu dài.
+  esp_task_wdt_reset();  // báo watchdog rằng loop còn sống
+
+  // Server chạy ở task riêng của esp_http_server; loop chỉ báo trạng thái để
+  // soi khi /capture bị timeout giữa phiên đo dài.
   if (!USE_AP) {
-    Serial.printf("[WiFi] status=%d  RSSI=%d dBm\n", WiFi.status(), WiFi.RSSI());
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.printf("[WiFi] OK | IP=%s | RSSI=%d dBm | chụp=%lu\n",
+                    WiFi.localIP().toString().c_str(), WiFi.RSSI(),
+                    (unsigned long)aquaDeviceCaptureCount());
+    } else {
+      Serial.printf("[WiFi] mất kết nối (status=%d) — đang thử nối lại\n",
+                    WiFi.status());
+    }
   }
   delay(10000);
 }
