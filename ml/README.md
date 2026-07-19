@@ -89,6 +89,39 @@ ESP32-CAM ở latency/flash/RAM chấp nhận được → giữ detector thật
 Nếu không → chuyển hướng Edge Impulse FOMO cho ESP32-CAM, chấp nhận mất size
 per-particle (ghi rõ hạn chế này, không âm thầm bỏ qua).
 
+## Chạy nhanh
+
+Ba bước, từ thư mục gốc repo:
+
+```bash
+# 1. Bật backend web (terminal riêng)
+cd web/backend && python -m uvicorn app.main:app --port 8000
+
+# 2. Kiểm tra cấu hình — không gọi API, không in API key
+python -m ml.infer --check-config
+
+# 3. Chạy
+python -m ml.infer <thư-mục-ảnh>            # ghi vào DB
+python -m ml.infer <thư-mục-ảnh> --dry-run  # chỉ đếm thử, KHÔNG ghi
+```
+
+Dashboard: `http://localhost:8000`
+
+Không cần cờ `--backend` nếu `ml/config.local.toml` đã khai `general.backend`.
+
+**Dùng `--dry-run` khi thử nghiệm.** DB là sổ audit truy xuất nguồn gốc — mỗi lần
+chạy thật là một bản ghi vĩnh viễn, không nên tạo rác trong đó.
+
+Hai điều phải nhớ khi đọc kết quả:
+
+- **`size_mm` là placeholder** cho tới khi bạn đo được px/mm thật trên rig. CLI in
+  cảnh báo mỗi lần chạy. Với ảnh dataset công khai, số mm hiện ra **không có nghĩa
+  vật lý** — đừng trích nó vào báo cáo như số đo thật.
+- **Nhãn là hình thái, không phải "nhựa hay không nhựa".** Model chỉ có 4 lớp
+  `fiber/film/fragment/pallet`, đều là nhựa. Nó **không có** lớp nào cho bọt khí hay
+  chất hữu cơ, nên gặp bọt khí nó vẫn gán vào một trong 4 lớp đó. Vì vậy dashboard
+  báo "Loại nhiều nhất" chứ không báo "tỉ lệ nhựa" — model không đo được tỉ lệ đó.
+
 ## Hai hướng model (2 backend, cùng một pipeline)
 
 Cùng dùng chung `ml/infer/` (source → detector → mapper → ingest). Chỉ khác ở
@@ -220,13 +253,32 @@ tham số gì là do người dựng workflow quyết. Xem workflow của bạn 
 > workflow riêng**. Đừng thử cách bọc base workflow bằng `inner_workflow` rồi truyền
 > `model_id` vào — workflow con không khai tham số đó nên sẽ lỗi 500 mọi lần gọi.
 
+**Workflow đang dùng: `aqua-scope-infer`** (tự tạo 2026-07-19). Nó khai `model_id`,
+`confidence`, `iou_threshold`, `class_agnostic_nms`, `max_detections` làm
+`WorkflowParameter`, nên đổi model = sửa một dòng config.
+
+Trong workspace còn sót workflow `…-logic` **hỏng** (500, đúng lỗi mô tả ở khung trên).
+Nó không được dùng và không ảnh hưởng gì tới code, nhưng nên xoá trên UI Roboflow cho
+khỏi bấm nhầm — API Roboflow không có endpoint xoá workflow. **Đừng xoá `… — Base
+Workflow`**: nó do platform sinh cho project dataset, không phải rác.
+
 ### Hướng 1 — tự train (CHƯA LÀM)
 
 Roboflow bản miễn phí **không cho tải weights** đã train trên nền tảng họ, nhưng
 **cho tải dataset**. Hướng này tải dataset về, tự train, sở hữu luôn `.pt` — và là
 đường **duy nhất** đi tiếp xuống chip (TFLite).
 
-Phần này chưa triển khai (Task 5 + 6 trong plan, đang hoãn). Backend `local` trong
+Phần này chưa triển khai (Task 5 + 6 trong plan, đang hoãn). Trạng thái thật hiện tại:
+
+| Thứ cần | Có chưa |
+|---|---|
+| `ml/models/best.pt` | **chưa** — thư mục `ml/models/` chưa tồn tại |
+| `ultralytics` | **chưa cài** |
+| Script tải dataset tự động | **chưa có** (Task 6) — `[dataset]` trong config mới chỉ là tham số ghi sẵn, chưa code nào đọc |
+| `ml/train_detector.py`, `ml/export_tflite.py` | có |
+
+Nên đổi `backend = "local"` lúc này sẽ **không chạy được** — nhưng nó báo lỗi rõ ràng
+(thiếu weights ở đường dẫn nào, cách tạo ra), không phải crash. Backend `local` trong
 CLI đã sẵn sàng nhận `ml/models/best.pt` khi có weights:
 ```bash
 python -m ml.infer <ảnh|thư mục> --backend local --weights ml/models/best.pt --px-per-mm <n>
