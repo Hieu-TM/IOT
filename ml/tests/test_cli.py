@@ -496,6 +496,46 @@ def test_device_id_board_wins_over_config_when_flag_omitted(tmp_path, monkeypatc
     assert posted[0]["device_id"] == _DEVICE_JSON["device_id"]
 
 
+def test_device_block_reaches_the_posted_payload(tmp_path, monkeypatch):
+    """Khối /device phải đi hết đường tới payload gửi đi, không chỉ tới mapper.
+
+    test_mapper.py kiểm build_metadata() một mình bằng dict tay, nên nếu ai đó
+    refactor cli.py làm rơi mất dòng truyền device_info thì mọi test vẫn xanh
+    trong khi khối /device âm thầm biến mất khỏi sổ audit ở môi trường thật —
+    đúng thứ duy nhất mà Task 9 sinh ra để bảo đảm. Test này khoá đường đi đó.
+    """
+    monkeypatch.setattr(cli, "Detector", _FakeDetector)
+    posted = []
+    _fake_post_recorder(monkeypatch, posted)
+
+    with _FakeBoard([("jpeg", _jpeg_bytes())],
+                    device_response=("json", _DEVICE_JSON)) as board:
+        rc = cli.main(["--from-board", board.host, "--px-per-mm", "10"])
+
+    assert rc == 0
+    assert len(posted) == 1
+    device = posted[0].get("device")
+    assert device is not None, "khối /device không tới được payload"
+    assert device["firmware"] == _DEVICE_JSON["firmware"]
+    assert device["camera"]["exposure"] == _DEVICE_JSON["camera"]["exposure"]
+    assert device["prefs_saved"] == _DEVICE_JSON["prefs_saved"]
+
+
+def test_device_block_absent_when_reading_a_folder(tmp_path, monkeypatch):
+    """Chạy từ thư mục ảnh thì không có board nào — metadata không được có
+    khóa `device` (đừng nhét null vào sổ audit)."""
+    monkeypatch.setattr(cli, "Detector", _FakeDetector)
+    posted = []
+    _fake_post_recorder(monkeypatch, posted)
+    _jpeg(tmp_path / "a.jpg")
+
+    rc = cli.main([str(tmp_path), "--px-per-mm", "10"])
+
+    assert rc == 0
+    assert len(posted) == 1
+    assert "device" not in posted[0]
+
+
 def test_device_id_falls_back_to_config_when_board_does_not_report_one(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "Detector", _FakeDetector)
     cfg_file = tmp_path / "config.toml"
