@@ -1,7 +1,15 @@
 # Aqua Scope — Firmware chính thức (ESP32-CAM AI-Thinker)
 
 **Đây là bản duy nhất cần nạp.** Các thư mục firmware khác trong repo là thử
-nghiệm hoặc tiền đề, giữ lại để tham khảo.
+nghiệm hoặc tiền đề, giữ lại để tham khảo:
+
+| Thư mục | Là gì |
+|---|---|
+| `firmware/Esp32 cam/` | thử nghiệm ban đầu — không nạp |
+| `firmware/aqua_scope_cam/` | tiền đề — không nạp |
+| `firmware/esp32-cam-webserver/` | **repo git lồng** (bản port easytarget, đang sửa dở). Không phải firmware của trạm. Vì là repo riêng nên không đặt ghi chú vào README của nó — ghi ở đây thay thế |
+| `firmware/pump_stopflow_test/` | công cụ test bơm độc lập, vẫn dùng được — không phải firmware của trạm |
+| `dataset_collector/firmware/` | bản tiền thân trực tiếp của thư mục này. `collect_dataset.py` chạy được với cả hai vì cùng `/capture` |
 
 Vai trò: cung cấp ảnh backlit chất lượng đúng, ổn định, kèm đủ thông tin để
 truy xuất nguồn gốc. Firmware **không** đếm hạt, không lưu trữ, không suy luận
