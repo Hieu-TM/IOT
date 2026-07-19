@@ -1019,6 +1019,8 @@ def test_503_frame_is_skipped_and_run_continues():
 
 
 def test_server_dies_midway_yields_earlier_frames():
+    """Brownout giữa burst: khung đã lấy được phải giữ nguyên, và vòng lặp
+    phải KẾT THÚC bình thường thay vì ném ngoại lệ ra ngoài."""
     board = _FakeBoard([("jpeg", _jpeg_bytes())],
                        device_response=("json", _DEVICE_JSON))
     with board:
@@ -1027,9 +1029,13 @@ def test_server_dies_midway_yields_earlier_frames():
         for i, frame in enumerate(src.frames()):
             frames.append(frame)
             if i == 0:
-                board._server.shutdown()   # brownout giữa burst
-    # khung lấy được trước khi board chết vẫn giữ nguyên, không mất trắng
-    assert len(frames) >= 1
+                board._server.shutdown()   # board chết ngay sau khung đầu
+
+    # Đúng 1 khung: khung đầu tới nơi, hai khung sau hỏng vì board đã chết.
+    # (Nếu chỉ khẳng định >= 1 thì test không bao giờ fail được — khung đầu
+    # luôn được append trước khi shutdown.)
+    assert len(frames) == 1
+    assert frames[0].image_bytes[:2] == b"\xff\xd8"
 ```
 
 - [ ] **Step 2: Chạy test để xác nhận thất bại**
