@@ -168,9 +168,15 @@ void setup() {
   sensor_t *s = esp_camera_sensor_get();
   Serial.printf("Sensor PID: 0x%x | PSRAM: %d bytes\n", s->id.PID, ESP.getFreePsram());
 
+  // Trần framesize mà bộ nhớ hiện có kham nổi - PHẢI khớp với nhánh đã chọn
+  // trong initCamera() (UXGA/PSRAM hay SVGA/DRAM). Không truyền cái này vào
+  // sẽ khiến applyDefaults/Load set thẳng UXGA, xóa mất fallback DRAM vừa
+  // dựng và làm buffer không đủ chỗ (ảnh ra bị cụt).
+  framesize_t maxFramesize = psramFound() ? FRAMESIZE_UXGA : FRAMESIZE_SVGA;
+
   // Mặc định backlit trước, rồi mới đè cấu hình đã lưu (nếu có) lên trên.
-  aquaPrefsApplyDefaults(s);
-  if (aquaPrefsLoad(s)) {
+  aquaPrefsApplyDefaults(s, maxFramesize);
+  if (aquaPrefsLoad(s, maxFramesize)) {
     Serial.println("Đã nạp cấu hình lưu trong flash.");
   } else {
     Serial.println("Flash chưa có cấu hình — dùng mặc định backlit.");

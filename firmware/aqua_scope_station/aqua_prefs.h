@@ -16,11 +16,25 @@
 
 // Áp bộ mặc định backlit silhouette lên sensor: TẮT AEC/AEC-DSP/AGC, gain 0,
 // exposure thấp. Gọi ngay sau esp_camera_init(), TRƯỚC aquaPrefsLoad().
-void aquaPrefsApplyDefaults(sensor_t *s);
+//
+// max_framesize: trần framesize mà bộ nhớ hiện có kham nổi (initCamera() đã
+// tự hạ xuống FRAMESIZE_SVGA + CAMERA_FB_IN_DRAM khi không thấy PSRAM - xem
+// aqua_scope_station.ino). Mặc định FRAMESIZE_UXGA (đúng bằng DEF_FRAMESIZE,
+// tức "không hạ gì cả") để không phá caller cũ nào gọi thiếu tham số này.
+// KHÔNG được bỏ tham số này rồi set_framesize(s, UXGA) vô điều kiện như
+// trước - làm vậy sẽ dỡ bỏ đúng cái fallback initCamera() vừa dựng, buffer
+// DRAM không đủ cho UXGA và ảnh ra bị cụt.
+void aquaPrefsApplyDefaults(sensor_t *s, framesize_t max_framesize = FRAMESIZE_UXGA);
 
 // Nạp cấu hình đã lưu (nếu có) và áp lên sensor.
 // Trả về true nếu flash có cấu hình, false nếu chưa lưu lần nào (giữ mặc định).
-bool aquaPrefsLoad(sensor_t *s);
+//
+// max_framesize: cùng ý nghĩa như aquaPrefsApplyDefaults(). Bắt buộc truyền
+// lại giá trị đã tính ở initCamera(): NVS có thể còn giữ framesize=UXGA từ
+// một lần lưu trước đó (lúc PSRAM còn hoạt động, hoặc từ bản firmware cũ) -
+// nếu không kiểm ở đây, một giá trị vượt quá bộ nhớ hiện có sẽ được nạp lại
+// mù quáng mỗi lần khởi động.
+bool aquaPrefsLoad(sensor_t *s, framesize_t max_framesize = FRAMESIZE_UXGA);
 
 // Ghi cứng trạng thái sensor hiện tại vào flash.
 void aquaPrefsSave(sensor_t *s);

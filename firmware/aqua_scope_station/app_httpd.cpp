@@ -363,7 +363,18 @@ static esp_err_t cmd_handler(httpd_req_t *req) {
 
   if (!strcmp(variable, "framesize")) {
     if (s->pixformat == PIXFORMAT_JPEG) {
-      res = s->set_framesize(s, (framesize_t)val);
+      // Chặn TẠI NGUỒN: trước đây (framesize_t)val được gán thẳng không kiểm
+      // tra. Một giá trị rác (val âm, hoặc >= FRAMESIZE_INVALID) không chỉ
+      // làm device_handler/status_handler đọc lệch mảng resolution[] (đã tự
+      // vá ở đó) - nó còn sống sót qua aquaPrefsSave()/NVS và bị nạp lại mù
+      // quáng ở mỗi lần khởi động (xem aqua_prefs.cpp). Chặn ở đây thì rác
+      // không bao giờ chạm được tới sensor hay flash.
+      if (val < 0 || val >= (int)FRAMESIZE_INVALID) {
+        log_i("framesize=%d ngoài phạm vi hợp lệ [0, %d) - bỏ qua", val, (int)FRAMESIZE_INVALID);
+        res = -1;
+      } else {
+        res = s->set_framesize(s, (framesize_t)val);
+      }
     }
   } else if (!strcmp(variable, "quality")) {
     res = s->set_quality(s, val);
@@ -453,6 +464,31 @@ static int print_reg(char *p, char *end, sensor_t *s, uint16_t reg, uint32_t mas
   return snprintf(p, end - p, "\"0x%04x\":%d,", reg, s->get_reg(s, reg, mask));
 }
 
+// Escape tối thiểu cho một chuỗi trước khi nhét vào JSON: chỉ `"` và `\` —
+// đủ để chặn ca thực tế duy nhất ở đây (SSID router do người dùng đặt tự do,
+// KHÔNG do firmware kiểm soát, có thể chứa hai ký tự này và làm gãy cấu trúc
+// JSON nếu nhét thẳng, xem WiFi.SSID() ở device_handler bên dưới). Không xử
+// lý \uXXXX cho ký tự điều khiển — SSID chứa ký tự điều khiển là ca hiếm đến
+// mức không đáng đánh đổi thêm độ phức tạp; ký tự điều khiển bị bỏ qua thay
+// vì cố escape đầy đủ.
+static void jsonEscape(const char *src, char *dst, size_t dstSize) {
+  if (dstSize == 0) return;
+  size_t di = 0;
+  for (size_t si = 0; src[si] != '\0' && di + 1 < dstSize; ++si) {
+    unsigned char c = (unsigned char)src[si];
+    if (c == '"' || c == '\\') {
+      if (di + 2 >= dstSize) break;  // không đủ chỗ cho cặp escape, dừng sớm
+      dst[di++] = '\\';
+      dst[di++] = (char)c;
+    } else if (c < 0x20) {
+      continue;  // ký tự điều khiển: bỏ, xem lý do ở docstring hàm
+    } else {
+      dst[di++] = (char)c;
+    }
+  }
+  dst[di] = '\0';
+}
+
 // GET /device — danh tính + thiết lập hiện hành, phục vụ truy xuất nguồn gốc.
 // KHÁC với /status: /status trả cấu hình camera cho slider của web UI (định
 // dạng do bản gốc Espressif quy định, không được đổi). /device là khối audit
@@ -469,19 +505,26 @@ static esp_err_t device_handler(httpd_req_t *req) {
   }
 
   framesize_t fs = (s != nullptr) ? (framesize_t)s->status.framesize : FRAMESIZE_UXGA;
-  // s->status.framesize đến từ cmd_handler (var=framesize), nơi gán trực tiếp
-  // (framesize_t)atoi(value) mà KHÔNG validate — giá trị HTTP không qua kiểm
-  // tra ở bất kỳ điểm nào trên đường đi trước khi tới đây. Đây là chỗ đầu
-  // tiên trong file dùng nó làm chỉ số mảng resolution[], nên phải tự chặn:
-  // nhẹ thì đọc rác ra width/height trong JSON, nặng thì đọc ngoài vùng cấp
-  // phát gây LoadProhibited khiến board tự reset — không chấp nhận được với
-  // một trạm chạy tự động không người trông. FRAMESIZE_INVALID (sensor.h)
-  // là cận trên hợp lệ; ngoài khoảng [0, FRAMESIZE_INVALID) thì lùi về UXGA.
+  // s->status.framesize đến từ cmd_handler (var=framesize) — giờ đã validate
+  // ở nguồn (xem cmd_handler) và aqua_prefs.cpp cũng tự clamp giá trị nạp từ
+  // NVS, nhưng đây là chỗ đầu tiên trong file dùng nó làm chỉ số mảng
+  // resolution[], nên vẫn tự chặn thêm một lớp phòng thủ: một bản firmware cũ
+  // (trước khi cmd_handler được vá) có thể đã ghi rác vào flash, và NGAY CẢ
+  // sau khi vá, một điểm ghi s->status.framesize nào đó trong tương lai lỡ bỏ
+  // qua clampFramesize() thì cũng không được phép biến thành LoadProhibited
+  // (đọc ngoài vùng cấp phát của resolution[]) khiến board tự reset — không
+  // chấp nhận được với một trạm chạy tự động không người trông. FRAMESIZE_INVALID
+  // (sensor.h) là cận trên hợp lệ; ngoài khoảng [0, FRAMESIZE_INVALID) thì lùi về UXGA.
   if (fs < 0 || fs >= FRAMESIZE_INVALID) {
     fs = FRAMESIZE_UXGA;
   }
   uint16_t w = resolution[fs].width;
   uint16_t h = resolution[fs].height;
+
+  // SSID chuẩn 802.11 tối đa 32 byte; *2 (trường hợp mọi byte đều phải escape)
+  // + 1 cho '\0' là đủ dư.
+  char ssidEscaped[72];
+  jsonEscape(WiFi.SSID().c_str(), ssidEscaped, sizeof(ssidEscaped));
 
   snprintf(json, sizeof(json),
            "{\"device_id\":\"%s\","
@@ -498,7 +541,7 @@ static esp_err_t device_handler(httpd_req_t *req) {
            aquaDeviceId(),
            AQUA_FIRMWARE_VERSION,
            (unsigned long)(millis() / 1000UL),
-           WiFi.SSID().c_str(), WiFi.RSSI(), WiFi.localIP().toString().c_str(),
+           ssidEscaped, WiFi.RSSI(), WiFi.localIP().toString().c_str(),
            psramFound() ? "true" : "false",
            sensorName,
            (int)fs, w, h,
