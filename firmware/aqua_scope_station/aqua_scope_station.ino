@@ -199,13 +199,36 @@ void setup() {
 
   // Watchdog 30s cho task loop: nếu loop treo, board tự reset thay vì đứng câm.
   // 30s rộng rãi so với nhịp báo cáo 10s bên dưới.
+  //
+  // QUAN TRỌNG: core esp32 3.x đã tự init sẵn TWDT lúc boot (sdkconfig mặc định
+  // CONFIG_ESP_TASK_WDT_TIMEOUT_S=5, CONFIG_ESP_TASK_WDT_PANIC=1). Gọi
+  // esp_task_wdt_init() lần nữa ở đây trả về ESP_ERR_INVALID_STATE — timeout
+  // 30000 KHÔNG được áp dụng, watchdog vẫn ở 5s. Nếu bỏ qua mã lỗi và cứ
+  // esp_task_wdt_add(NULL), loop() dưới kia (nghỉ 10s/lát trong bản cũ là một
+  // cục delay(10000)) sẽ luôn bị panic ở giây thứ 5 -> board reset -> setup()
+  // chạy lại -> panic lần nữa: boot loop vô tận, không bao giờ phục vụ ảnh.
   esp_task_wdt_config_t wdtConfig = {
     .timeout_ms = 30000,
     .idle_core_mask = 0,
     .trigger_panic = true,
   };
-  esp_task_wdt_init(&wdtConfig);
-  esp_task_wdt_add(NULL);
+  esp_err_t wdtErr = esp_task_wdt_init(&wdtConfig);
+  if (wdtErr == ESP_ERR_INVALID_STATE) {
+    // TWDT của core đã chạy sẵn — áp lại timeout 30s lên chính nó thay vì
+    // init chồng lần hai.
+    wdtErr = esp_task_wdt_reconfigure(&wdtConfig);
+  }
+  if (wdtErr == ESP_OK) {
+    esp_task_wdt_add(NULL);
+  } else {
+    // Không đăng ký loop vào watchdog nếu chưa chắc timeout đã đúng 30s —
+    // đăng ký nhầm vào watchdog 5s trong khi loop nghỉ theo lát 1s (xem dưới)
+    // vẫn an toàn, nhưng nếu esp_task_wdt_reconfigure() cũng lỗi thì ta không
+    // biết timeout thực tế là bao nhiêu. Thà chạy không watchdog còn hơn tự
+    // dựng lại vòng lặp reset vô tận.
+    Serial.printf("[CẢNH BÁO] Không cấu hình được watchdog (mã 0x%x) — loop() sẽ KHÔNG được giám sát watchdog.\n",
+                  wdtErr);
+  }
 }
 
 void loop() {
@@ -223,5 +246,15 @@ void loop() {
                     WiFi.status());
     }
   }
-  delay(10000);
+  // Nghỉ 10s nhưng chia thành 10 lát 1s, mỗi lát reset watchdog một lần —
+  // KHÔNG delay(10000) một cục. Watchdog thực tế có thể là 30s (cấu hình ở
+  // setup()) hoặc 5s (nếu cấu hình thất bại và ta không đăng ký loop vào
+  // watchdog — xem cảnh báo ở setup()); dù là giá trị nào, đợi rời rạc kiểu
+  // này cũng không bao giờ để quá 1s trôi qua giữa hai lần reset, nên không
+  // phụ thuộc vào con số timeout cụ thể. Sau này có ai nâng nhịp báo cáo lên
+  // 60s cũng không vô tình dựng lại boot loop như bản delay(10000) cũ.
+  for (int i = 0; i < 10; i++) {
+    esp_task_wdt_reset();
+    delay(1000);
+  }
 }
