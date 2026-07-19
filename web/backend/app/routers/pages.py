@@ -42,13 +42,20 @@ router = APIRouter(tags=["pages"])
 templates = Jinja2Templates(directory=str(config.APP_DIR / "templates"))
 
 # --- Label vocabulary (single source, mirrors static/css + static/js) ---
-LABEL_ORDER = ["plastic", "bubble", "organic", "fiber", "unknown"]
+# Current detector vocabulary (all four are plastic morphologies).
+LABEL_ORDER = ["fiber", "film", "fragment", "pallet", "unknown"]
 LABEL_VI = {
+    "fiber": "Sợi",
+    "film": "Màng",
+    "fragment": "Mảnh",
+    "pallet": "Viên",
+    "pellet": "Viên",      # dataset spells it "pallet"; accept the correct spelling too
+    "unknown": "Không xác định",
+    # Legacy vocabulary from the earlier hybrid design - kept so historical rows
+    # already stored in the database still render with a Vietnamese name.
     "plastic": "Nhựa",
     "bubble": "Bọt khí",
     "organic": "Hữu cơ",
-    "fiber": "Sợi",
-    "unknown": "Không xác định",
 }
 
 HISTORY_PAGE_SIZE = 10
@@ -266,8 +273,13 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
         ).all()
         today_dist = {label: count for label, count in rows}
     today_total = sum(today_dist.values())
-    plastic_count = today_dist.get("plastic", 0)
-    plastic_pct = round(plastic_count / today_total * 100) if today_total else 0
+    # No plastic-ratio metric: every class the detector can emit is a plastic
+    # morphology, and it has no non-plastic class - so a "% plastic" figure would
+    # assert something the model cannot determine. Show the dominant type instead.
+    dominant_label, dominant_count = ("", 0)
+    if today_dist:
+        dominant_label, dominant_count = max(today_dist.items(), key=lambda kv: kv[1])
+    dominant_pct = round(dominant_count / today_total * 100) if today_total else 0
     warn_count = sum(1 for s in today_samples if _is_warn(s.particle_count))
 
     metric_tiles = [
@@ -286,9 +298,10 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
             "warn": False,
         },
         {
-            "label": "Tỉ lệ nhựa",
-            "value": f"{plastic_pct}%",
-            "hint": f"{plastic_count} / {today_total} hạt",
+            "label": "Loại nhiều nhất",
+            "value": _label_vi(dominant_label) if dominant_label else "—",
+            "hint": (f"{dominant_count}/{today_total} hạt · {dominant_pct}%"
+                     if today_total else "chưa có hạt"),
             "icon": "plus",
             "value_class": "teal",
             "warn": False,
