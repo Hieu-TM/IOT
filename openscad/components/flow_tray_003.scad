@@ -186,12 +186,20 @@ module bell_void() {
 //     (giao mặt cắt ngang, tránh mặt tiếp tuyến gây non-manifold khi union). Không kẹp
 //     thì offset sẽ đẩy vỏ tới tận bell_fillet_r+2.0+bell_wall, thò quá mặt ngoài thành
 //     khay r=tray_outer/2.
+//   - y ≥ 0 (SỬA LỖI NGHIÊM TRỌNG — bịt kín miệng loe): offset(r=bell_wall) bo tròn
+//     luôn góc nhọn tại miệng loe y=0 (điểm gấp giữa cạnh (0,0)-(6,0) nằm ngang và
+//     cung tại a=0), quét vật liệu tràn xuống tới y=−bell_wall trên SUỐT bề rộng
+//     miệng (toàn bộ mặt cắt r∈[0,6] tại y=0). Vì bell_void() KHÔNG có hình học ở
+//     y<0, difference() không khoét được phần tràn này → nó BỊT ĐẶC miệng loe
+//     (đã đo bằng projection(cut=true): X=15.9…16.9 đặc hoàn toàn, xem task-4-report).
+//     Kẹp thêm y≥0 loại bỏ đúng phần tràn dưới mặt miệng, để lại một gờ phẳng
+//     r∈[6, 6+bell_wall] tại y=0 — miệng loe mở, không còn nắp.
 module bell_outer() {
     rotate_extrude($fn = 96)
         intersection() {
             offset(r = bell_wall) bell_profile_2d();
-            translate([0, -1000])
-                square([1000, 1000 + bell_fillet_r + 1.0]);
+            translate([0, 0])
+                square([1000, bell_fillet_r + 1.0]);
         }
 }
 
