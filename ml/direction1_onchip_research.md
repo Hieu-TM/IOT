@@ -43,7 +43,7 @@ Train xong trên PC (float32) thì model đạt độ chính xác X. Khi ép nó
 2. **Giảm độ phân giải đầu vào** (train `imgsz=416` → export `imgsz=192`, xem `config.toml`
    `[export].tflite_imgsz`). Hạt <2mm chỉ vài px; giảm imgsz làm hạt nhỏ **biến mất** → tụt recall.
 3. **Thu nhỏ kiến trúc** (pruning / chọn model nhỏ hơn) — bớt tham số thì bớt sức biểu diễn.
-4. **Đổi runtime / tập toán tử** — TFLite-Micro/ESP-NN không hỗ trợ mọi op; op bị thay thế/xấp xỉ
+4. **Đổi runtime / tập toán tử** — TFLite-Micro / ESP-DL không hỗ trợ mọi op; op bị thay thế/xấp xỉ
    có thể lệch kết quả so với TF trên PC.
 5. **Train↔deploy mismatch** — không phải "xuống chip" nhưng là thủ phạm số 1 khiến "PC 95%,
    board 60%": khác exposure, khác backlit, khác cách tiền xử lý/normalize crop. (Xem
@@ -57,18 +57,20 @@ Train xong trên PC (float32) thì model đạt độ chính xác X. Khi ép nó
 
 ## 3. Ràng buộc phần cứng thật (phải biết trước khi chọn kỹ thuật)
 
-Hướng 1 hiện nhắm board **ESP32-CAM (AI-Thinker, OV2640)** theo `ml/README.md` — **không** phải
-XIAO ESP32-S3. Đây là khác biệt **quyết định** vì:
+**Board deploy đã chốt: ESP32-CAM (AI-Thinker, OV2640)** — theo `ml/README.md`. Toàn bộ tài liệu
+này giả định đích là ESP32-CAM; mọi lựa chọn kỹ thuật bên dưới đều bám ràng buộc của board này.
 
-- **ESP32 (ESP32-CAM)**: lõi Xtensa LX6, **không có** lệnh vector AI, **không có** ESP-NN SIMD
-  int8 tăng tốc. Chạy CNN nặng rất chậm.
-- **ESP32-S3** (board của pipeline hybrid trong `ai_model_plan.md`): có lệnh vector + **ESP-NN**
-  tăng tốc int8 (Conv/Depthwise/FullyConnected) → nhanh hơn nhiều lần cho cùng model.
+Đặc điểm phần cứng quyết định của ESP32-CAM:
 
-Hệ quả: **nếu deploy YOLO trên ESP32-CAM, ngân sách latency/RAM cực chặt**; rất có thể detector
-thật không chạy nổi ở tốc độ dùng được và phải lùi về FOMO (mất size per-particle) — đúng như
-"quy tắc quyết định" đã ghi trong `ml/README.md` Phase C. **Việc chốt board (ESP32-CAM giữ nguyên
-hay chuyển sang S3) nên làm SỚM** vì nó đổi cả lựa chọn kỹ thuật bên dưới.
+- Lõi **Xtensa LX6** (ESP32 thường), **không có** lệnh vector AI, **không có** accelerator int8
+  → chạy CNN nặng rất chậm. Ngân sách latency/RAM vì thế **cực chặt**.
+- Có **PSRAM** (thường 4MB trên module AI-Thinker) — dùng để chứa `tensor_arena` và buffer ảnh
+  (`ps_malloc`); nhưng PSRAM chậm hơn SRAM nội, càng siết thêm latency.
+
+Hệ quả: **deploy YOLO trên ESP32-CAM có ngân sách latency/RAM cực chặt**; rất có thể detector thật
+không chạy nổi ở tốc độ dùng được và phải lùi về FOMO (mất size per-particle) — đúng như "quy tắc
+quyết định" đã ghi trong `ml/README.md` Phase C. **Đây là ràng buộc cố định, không phải lựa chọn
+board** — mọi kỹ thuật §4 dưới đây là để ép model vừa với ESP32-CAM, không phải để đổi sang board mạnh hơn.
 
 Con số phải **đo**, không đoán (dùng `ml/benchmark_tflite.py`): kích thước file `.tflite` (≈ flash
 cần), tensor arena ước tính (≈ RAM cần, phải nằm trong PSRAM qua `ps_malloc`), latency/ảnh. Lưu ý
@@ -126,12 +128,15 @@ teacher. Student nhỏ thường **đạt accuracy cao hơn so với train stude
 - Hữu ích khi model nhỏ nhất vẫn phải giữ recall cao. Đắt về công train, để dành khi các cách trên
   chưa đủ.
 
-### 4.5 Chọn runtime/compiler tối ưu cho đúng chip
+### 4.5 Chọn runtime/compiler tối ưu cho ESP32-CAM
 Cùng một `.tflite` int8, chạy trên runtime khác nhau ra latency khác nhau (accuracy gần như không
-đổi, nhưng tốc độ đổi nhiều — mà tốc độ mới là thứ quyết định detector có sống nổi trên MCU không):
-- **TFLite-Micro + ESP-NN** (ESP-IDF): ESP-NN tăng tốc int8 **trên ESP32-S3**; trên ESP32-CAM (LX6)
-  gần như không có lợi.
-- **ESP-DL** (Espressif): thư viện DL tối ưu cho dòng ESP32, có quantize tool riêng.
+đổi, nhưng tốc độ đổi nhiều — mà tốc độ mới là thứ quyết định detector có sống nổi trên ESP32-CAM
+không). Lưu ý: ESP32-CAM là ESP32 thường (LX6), **không có** accelerator, nên đừng kỳ vọng cú tăng
+tốc int8 SIMD như trên dòng có accelerator — các runtime dưới đây chỉ giúp trong giới hạn của LX6:
+- **ESP-DL** (Espressif): thư viện DL tối ưu cho dòng ESP32, có kernel int8 viết tay và quantize
+  tool riêng — lựa chọn runtime chính cho ESP32-CAM.
+- **TFLite-Micro** (ESP-IDF): interpreter chuẩn, chạy được trên ESP32-CAM nhưng kernel int8 chỉ ở
+  mức C tham chiếu (không có SIMD của LX6) → thường chậm hơn ESP-DL cho cùng model.
 - **EON Compiler (Edge Impulse)**: sinh mã C gọn hơn interpreter TFLM, kèm **ước tính RAM/flash/
   latency TRƯỚC khi nạp** — rất hợp để chốt nhánh deploy sớm (xem `ai_model_plan.md` §Phase 2, 9).
 - **NeuralCasting**: sinh mã C thuần ONNX→C, **nhưng chỉ cho model nhỏ (MLP/GRU/1D-CNN)** — xem §6.
@@ -141,7 +146,7 @@ Cùng một `.tflite` int8, chạy trên runtime khác nhau ra latency khác nha
 ## 5. Quy trình đề xuất cho Hướng 1 (khi đã có dataset)
 
 ```
-[0] Chốt board (ESP32-CAM giữ nguyên? hay chuyển S3 để có ESP-NN?) + chốt px/mm thật của rig
+[0] Board đã chốt: ESP32-CAM. Chốt px/mm thật của rig + chốt imgsz deploy (§4.2)
       ↓
 [1] Có dataset ảnh THẬT từ rig (backlit, manual exposure, đúng cấu hình deploy)
       → gán nhãn (Roboflow) → export YOLO → ml/datasets/<version>/
@@ -157,9 +162,9 @@ Cùng một `.tflite` int8, chạy trên runtime khác nhau ra latency khác nha
       ↓                                                    - tăng imgsz / dùng tiling (§4.2)
 [5] Nếu latency/RAM KHÔNG đạt trên ESP32-CAM:              - QAT (§4.1)
       → theo quy tắc ml/README.md Phase C:                 - pruning + fine-tune (§4.3)
-        lùi FOMO (mất size) HOẶC chuyển board S3            - distillation (§4.4)
+        lùi FOMO (mất size per-particle) trên ESP32-CAM     - distillation (§4.4)
       ↓                                             rồi quay lại [3] đo lại
-[6] Deploy: xxd model_int8.tflite → mảng C → TFLM/ESP-NN (S3) hoặc ESP-DL
+[6] Deploy: model_int8.tflite → ESP-DL (hoặc TFLM) trên ESP32-CAM
       → tensor_arena trong PSRAM (ps_malloc), đăng ký đúng op resolver
       ↓
 [7] Kiểm trên board thật: chạy vài ảnh test đã biết nhãn, so số hạt board vs PC.
@@ -200,10 +205,10 @@ hiệu tán xạ **1D** (cửa sổ 41 mẫu).
 2. **Chỉ compile được model nhỏ (MLP/GRU/1D-CNN).** `variants/00_huong_1D_va_holoscope.md` ghi rõ:
    *"NeuralCasting chỉ compile được model nhỏ (MLP/GRU)"*. Một YOLO có Conv2D/nhiều tầng/NMS **vượt
    xa** phạm vi khuôn mẫu toán tử của nó — nó không có template cho toàn bộ op của một detector, và
-   nếu có thì mã sinh ra cũng không tối ưu bằng ESP-NN/ESP-DL vốn được viết tay cho Conv int8.
+   nếu có thì mã sinh ra cũng không tối ưu bằng ESP-DL vốn có kernel Conv int8 viết tay cho ESP32.
 3. **Đích khác nhau.** NeuralCasting hợp với nhánh **1D scattering** (nếu sau này làm biến thể đó),
-   nơi model đủ nhỏ để nó tỏa sáng. Cho detector ảnh, **TFLite-Micro + ESP-NN / ESP-DL / EON** mới
-   là runtime đúng.
+   nơi model đủ nhỏ để nó tỏa sáng. Cho detector ảnh trên ESP32-CAM, **ESP-DL / TFLite-Micro / EON**
+   mới là runtime đúng.
 
 > **Kết luận về NeuralCasting:** giữ nó như **tài liệu tham khảo cho biến thể 1D** (`variants/`)
 > và như **nguồn ý tưởng** (int8 tĩnh, sinh mã C, cấp phát tĩnh) — **không** đưa vào pipeline
@@ -235,7 +240,8 @@ hiệu tán xạ **1D** (cửa sổ 41 mẫu).
   sau khi train trên ảnh thật (Phase D).
 - **Lens chưa nét ở 3–5cm** (`camera-focus-limit`, `ai_model_plan.md` Phase 0): ảnh mờ → model rác,
   không cứu bằng train/quantize. Phải xử lý TRƯỚC khi thu dataset.
-- **Board ESP32-CAM không có ESP-NN** → detector int8 có thể vẫn quá chậm. Chốt board sớm (§3).
+- **ESP32-CAM không có accelerator** (§3) → detector int8 có thể vẫn quá chậm; đây là ràng buộc cố
+  định, phải đo latency sớm (`benchmark_tflite.py`) và sẵn sàng lùi FOMO nếu không đạt.
 - **Train↔deploy mismatch** (§2 mục 5): thủ phạm số 1 của "PC cao, board thấp". Cùng exposure, cùng
   backlit, cùng tiền xử lý.
 - **`imgsz` deploy quá nhỏ** làm hạt <2mm biến mất — quét & đo, đừng để mặc định 192 nếu chưa kiểm.
@@ -246,8 +252,8 @@ hiệu tán xạ **1D** (cửa sổ 41 mẫu).
 
 ## 9. Việc cần làm tiếp theo (thứ tự)
 
-- [ ] **Chốt board deploy** (ESP32-CAM giữ nguyên vì có OV2640 sẵn, hay chuyển ESP32-S3 để có
-      ESP-NN). Quyết định này mở khóa mọi lựa chọn kỹ thuật §4.
+- [x] **Board deploy đã chốt: ESP32-CAM** (AI-Thinker, OV2640). Mọi lựa chọn kỹ thuật §4 bám ràng
+      buộc board này (§3).
 - [ ] **Thu dataset ảnh thật từ rig** theo `ai_model_plan.md` Phase 3 (self-labeling "mẫu đã biết
       nhãn", đúng cấu hình exposure/backlit sẽ deploy). **Đây là chặn cứng — chưa có thì các bước
       sau vô nghĩa.**
