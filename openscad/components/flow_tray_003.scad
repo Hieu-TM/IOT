@@ -10,7 +10,7 @@
 //       (chống dồn ứ + dội sóng ngược tại miệng lỗ xả).
 // Nguồn số liệu + 4 chỗ lệch có chủ ý so với tài liệu: constants.scad §CHỐNG SÓNG
 // và docs/research/2026-07-23-khay-lang-song-nghien-cuu-hop-nhat.md
-// Lệch thứ 5 (file-local): khoam loe sâu 1.0 (chứ không 1.4), bảo toàn 3 gân.
+// Lệch thứ 5 (file-local): khoang loe sâu 1.0 (chứ không 1.4), bảo toàn 3 gân.
 //
 // ⚠️ KIẾN TRÚC 2 TẦNG UNION — bắt buộc, không gộp được:
 //   flow_tray() = tray_shell()  ∪  tray_internals()
@@ -101,8 +101,50 @@ module tray_shell() {
     }
 }
 
+// --- (2) VÁCH CONG tiêu năng ---
+// Hàng rào cung tròn đặt đối diện cổng vào: chắn tia thẳng, ép nước đi VÒNG qua
+// hành lang rộng baffle_corridor (=3.0mm) ở 2 đầu mút.
+// Kín đáy (không hở chân) để hạt không chui vào kẹt phía sau; 2 đầu mút bo bán
+// nguyệt r=baffle_t/2 để hạt trượt qua không vướng góc sắc.
+module arc_baffle() {
+    r_in  = baffle_r_mid - baffle_t/2;
+    r_out = baffle_r_mid + baffle_t/2;
+    union() {
+        // Thân cung: vành khuyên ∩ nêm góc
+        intersection() {
+            difference() {
+                cylinder(r = r_out, h = baffle_h, $fn = 160);
+                translate([0, 0, -EPS])
+                    cylinder(r = r_in, h = baffle_h + 2*EPS, $fn = 160);
+            }
+            // Nêm quét baffle_angle°, canh giữa tại 180° (hướng cổng vào −X)
+            rotate([0, 0, 180 - baffle_angle/2])
+                linear_extrude(height = baffle_h + 2*EPS)
+                    polygon(points = concat(
+                        [[0, 0]],
+                        [for (i = [0 : 24])
+                            let (a = i * baffle_angle / 24)
+                            [tray_outer * cos(a), tray_outer * sin(a)]]
+                    ));
+        }
+        // Bo 2 đầu mút (bán nguyệt r = baffle_t/2 — tối đa khả thi trên vách 1.2mm)
+        for (s = [-1, 1])
+            rotate([0, 0, 180 + s * baffle_angle/2])
+                translate([baffle_r_mid, 0, 0])
+                    cylinder(d = baffle_t, h = baffle_h, $fn = 24);
+    }
+}
+
+// --- Chi tiết NẰM TRONG lòng Ø40 — phải union SAU khi tray_shell() đã khoét lòng ---
+module tray_internals() {
+    arc_baffle();
+}
+
 module flow_tray() {
-    color(col_plastic) tray_shell();
+    color(col_plastic) union() {
+        tray_shell();
+        tray_internals();
+    }
 }
 
 flow_tray();
