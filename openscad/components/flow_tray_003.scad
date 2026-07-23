@@ -128,6 +128,12 @@ module arc_baffle() {
                     ));
         }
         // Bo 2 đầu mút (bán nguyệt r = baffle_t/2 — tối đa khả thi trên vách 1.2mm)
+        // ⚠️ Đường kính nắp PHẢI = baffle_t (đúng bằng bề dày vách): tâm nắp đặt tại
+        // baffle_r_mid nên mép ngoài nắp trùng đúng mặt ngoài cung (r_out) — đây là
+        // điều giữ hành lang baffle_corridor đúng bằng giá trị đã assert ở constants.
+        // Hardcode một số khác baffle_t ở đây sẽ ăn lấn hành lang MÀ KHÔNG CÓ assert
+        // nào bắt được (baffle_corridor chỉ tính từ baffle_r_mid/baffle_t, không đọc
+        // giá trị thực dùng ở dòng dưới).
         for (s = [-1, 1])
             rotate([0, 0, 180 + s * baffle_angle/2])
                 translate([baffle_r_mid, 0, 0])
@@ -135,9 +141,60 @@ module arc_baffle() {
     }
 }
 
+// --- (3) MIỆNG LOE (bellmouth) tại cổng RA ---
+// Biên dạng: cung 1/4 đường tròn bán kính bell_fillet_r, tiếp tuyến RADIAL tại
+// miệng loe và tiếp tuyến DỌC TRỤC tại cổ → dòng lướt mượt vào lòng ống, không
+// bị bóp nghẹt ở mép sắc (hệ số tổn thất K: ~0.5 → <0.05).
+// Trục cục bộ +Z: miệng loe (rộng Ø12) tại z=0, cổ (Ø6) tại z=bell_fillet_r.
+function bell_r(a) = outlet_bore/2 + bell_fillet_r - bell_fillet_r * sin(a);
+function bell_z(a) = bell_fillet_r - bell_fillet_r * cos(a);
+
+// Vỏ ngoài loa kèn (đặc). Kéo dài thêm 1mm quá cổ để CHỌC vào thành khay
+// (giao transversal, tránh mặt tiếp tuyến gây non-manifold khi union).
+module bell_outer() {
+    rotate_extrude($fn = 96)
+        polygon(points = concat(
+            [[0, 0]],
+            [for (i = [0 : bell_steps]) let (a = i * 90 / bell_steps)
+                [bell_r(a) + bell_wall, bell_z(a)]],
+            [[bell_r(90) + bell_wall, bell_fillet_r + 1.0],
+             [0, bell_fillet_r + 1.0]]
+        ));
+}
+
+// Lòng loa kèn (phần bị khoét). Kéo dài quá cổ để nối liền lòng ngạnh Ø6.
+module bell_void() {
+    rotate_extrude($fn = 96)
+        polygon(points = concat(
+            [[0, 0]],
+            [for (i = [0 : bell_steps]) let (a = i * 90 / bell_steps)
+                [bell_r(a), bell_z(a)]],
+            [[outlet_bore/2, bell_fillet_r + 2.0],
+             [0, bell_fillet_r + 2.0]]
+        ));
+}
+
+// Cụm loa kèn đã đặt đúng vị trí + CẮT PHẲNG tại sàn z=0.
+// Cắt sàn là ĐÚNG về vật lý: loa kèn hút sát sàn thì chính mặt sàn đóng vai trò
+// thành dưới (giống bellmouth đặt sát đáy bể hút của bơm công nghiệp), đồng thời
+// tránh loe thò xuống dưới z=0 (vùng hốc đĩa acrylic).
+module bellmouth_boss() {
+    intersection() {
+        difference() {
+            translate([tray_inner/2 - bell_fillet_r, 0, port_z])
+                rotate([0, 90, 0]) bell_outer();
+            translate([tray_inner/2 - bell_fillet_r, 0, port_z])
+                rotate([0, 90, 0]) bell_void();
+        }
+        translate([-tray_outer, -tray_outer, 0])
+            cube([2*tray_outer, 2*tray_outer, tray_depth]);
+    }
+}
+
 // --- Chi tiết NẰM TRONG lòng Ø40 — phải union SAU khi tray_shell() đã khoét lòng ---
 module tray_internals() {
     arc_baffle();
+    bellmouth_boss();
 }
 
 module flow_tray() {
