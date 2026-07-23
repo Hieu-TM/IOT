@@ -10,6 +10,7 @@
 //       (chống dồn ứ + dội sóng ngược tại miệng lỗ xả).
 // Nguồn số liệu + 4 chỗ lệch có chủ ý so với tài liệu: constants.scad §CHỐNG SÓNG
 // và docs/research/2026-07-23-khay-lang-song-nghien-cuu-hop-nhat.md
+// Lệch thứ 5 (file-local): khoam loe sâu 1.0 (chứ không 1.4), bảo toàn 3 gân.
 //
 // ⚠️ KIẾN TRÚC 2 TẦNG UNION — bắt buộc, không gộp được:
 //   flow_tray() = tray_shell()  ∪  tray_internals()
@@ -75,9 +76,11 @@ module tray_shell() {
         // (1) Cửa vào đục lỗ — THAY khe liền 20×3 của _002
         inlet_windows();
         // Khoang loe trong hộp: quạt từ lòng ngạnh Ø6 → bề rộng cụm cửa sổ.
-        // ⚠️ Mặt cuối khoang DỪNG tại x=−21.8 (0.2mm bên trong mặt ngoài thành r=22):
+        // ⚠️ Mặt cuối khoang DỪNG tại x=−22.2 (0.2mm chưa tới mặt ngoài thành r=22):
         //   - không tràn tới x=−20 (mặt trong thành), nếu tràn sẽ ăn mất 3 gân;
         //   - không dừng đúng x=−22 (tiếp tuyến mặt trụ ngoài → non-manifold).
+        //   Dòng chảy vẫn liên tục: khoang này giao nhau hoàn toàn với vùng X của
+        //   inlet_windows() (x −24 tới −18), nên 2 khoang dùng chung thể tích.
         hull() {
             translate([-tray_outer/2 - plenum_deep + 2, 0, port_z])
                 rotate([0, 90, 0]) cylinder(d = outlet_bore, h = 1, $fn = 36);
