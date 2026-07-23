@@ -6,9 +6,12 @@
 > gọi API) đã làm xong và đã chạy thật; hai hướng thay thế được cho nhau khi một bên lỗi
 > (xem bảng "Hai hướng model" trong `ml/README.md`).
 >
-> Tài liệu này **chưa** train gì — hiện **chưa có dataset** (`ml/datasets/` trống, `ml/models/`
-> chưa tồn tại). Mục tiêu ở đây là **chốt phương pháp trước khi thu dữ liệu**, để khi có dataset
-> thì đi thẳng, không phải làm lại. Liên quan: `ml/README.md` (Phase A–D), `ai_model_plan.md`
+> **Dataset đã có** (để ở máy — `ml/datasets/` đã gitignore nên không thấy trong repo). Vì vậy
+> chặn cứng không còn là "thiếu dữ liệu"; hai câu hỏi thật lúc này là: **(a)** model tự train có
+> **chạy nổi trên ESP32-CAM** để ra kết quả cuối không, và khi ghép thêm các tác vụ khác (camera,
+> WiFi, CV, bơm) thì vướng gì (→ §3.1, §3.2); **(b)** dataset đó có **khớp domain deploy** (ảnh
+> backlit-silhouette từ chính rig) không — nếu là dataset công khai thì số accuracy chỉ có nghĩa
+> sau khi fine-tune trên ảnh thật (§8). Liên quan: `ml/README.md` (Phase A–D), `ai_model_plan.md`
 > (pipeline hybrid & Track A/B), `variants/README.md` (bài NeuralCasting/1D — xem §6).
 
 ---
@@ -75,6 +78,91 @@ board** — mọi kỹ thuật §4 dưới đây là để ép model vừa với
 Con số phải **đo**, không đoán (dùng `ml/benchmark_tflite.py`): kích thước file `.tflite` (≈ flash
 cần), tensor arena ước tính (≈ RAM cần, phải nằm trong PSRAM qua `ps_malloc`), latency/ảnh. Lưu ý
 benchmark trên PC chỉ là ước tính — ESP32-CAM **chậm hơn nhiều** vì không có accelerator.
+
+### 3.1 Model có chạy nổi trên ESP32-CAM không? (ước tính ngân sách)
+
+> **Các số dưới đây là ước tính bậc độ lớn (order-of-magnitude) để RA QUYẾT ĐỊNH ĐI/KHÔNG, không
+> phải số đo.** Số thật phải lấy từ `benchmark_tflite.py` + đo trên board. Nhưng ngay cả ước tính
+> thô cũng đủ để thấy trước "có khả thi hay không".
+
+**Ngân sách phần cứng ESP32-CAM (AI-Thinker):**
+
+| Tài nguyên | Có | Ghi chú siết chặt |
+|---|---|---|
+| **SRAM nội** | ~520KB tổng | Sau khi IDF + WiFi + camera driver khởi động, **heap trống chỉ còn ~150–250KB**, lại phân mảnh. DMA cần RAM nội liền mạch. |
+| **PSRAM** | 4MB (QSPI ~80MHz) | Chậm hơn SRAM nội nhiều lần; chứa framebuffer + weights + tensor arena — nhưng **không đủ cho tất cả cùng lúc** (xem §3.2). |
+| **Flash** | 4MB | Chứa code + weights + web assets. Weights model int8 ăn phần lớn nếu để nguyên. |
+| **CPU** | 2× Xtensa LX6 @240MHz | **Không SIMD, không vector, không NN-accel.** Conv int8 chạy bằng ALU số nguyên vô hướng → chậm. |
+
+**Ứng viên A — YOLO `yolo11n` int8 @ imgsz 192 (detector thật, giữ được size):**
+- Trọng số: `yolo11n` ~2.6M tham số → int8 ~**2.6MB** → vừa 4MB flash nhưng chật; nên nạp vào PSRAM.
+- Tensor arena (activation đỉnh): ước tính ~**0.5–1.5MB** → bắt buộc PSRAM.
+- Tính toán: ở 192×192 ~**0.5–0.6 GMAC/ảnh**. Với throughput int8 vô hướng thực tế của LX6 (lạc quan
+  ~50–100 MMAC/s), một lần suy luận ≈ **~5–12 giây** (có thể hơn). → **Quá chậm cho video/real-time.**
+
+**Ứng viên B — FOMO 96×96 grayscale (phương án lùi, MẤT size per-particle):**
+- Model tí hon (vài chục KB), arena vài chục–~trăm KB (có thể nhét RAM nội hoặc PSRAM).
+- Latency trên ESP32-CAM (không accel) ước ~**0.5–2 giây/ảnh** (số EI công bố ~vài trăm ms là trên
+  dòng CÓ accel; LX6 chậm hơn vài lần).
+- Đánh đổi: chỉ trả **tâm hạt (centroid), không có bounding box → mất phân bố kích thước** — đúng
+  hạn chế đã ghi ở `ml/README.md` Phase C & `CLAUDE.md`.
+
+**Kết luận đi/không:**
+1. **YOLO thật on-device ESP32-CAM: gần như KHÔNG khả thi ở latency dùng được** nếu cần nhiều
+   khung/giây. Đây chính là lý do `ml/README.md` Phase C đặt sẵn quy tắc "lùi FOMO".
+2. **NHƯNG chu kỳ Stop-Flow cứu bàn thua:** hệ này **không phải video real-time**. Chu kỳ là
+   bơm→dừng 1–2s→**chụp 1 khung→suy luận→xả→lặp**, lấy mẫu **theo mẻ/định kỳ** (xem `application-context`
+   trong `CLAUDE.md`). Nếu mỗi mẫu chỉ cần **vài khung** và cadence lấy mẫu là **vài phút/mẻ**, thì
+   một lần suy luận **3–8 giây vẫn có thể CHẤP NHẬN được**. → Với QC nước đầu vào theo mẻ, **detector
+   chậm-mà-đúng có thể vẫn dùng được** — điều mà nếu đây là camera giám sát 30fps thì đã loại thẳng.
+3. Điều kiện để (2) đúng: **số khung/mẫu nhỏ** (latency nhân lên theo số khung), và **cho phép khối
+   suy luận chạy tuần tự** không bị tác vụ khác chen (§3.2).
+
+→ **Cách chốt thật:** export int8 → `benchmark_tflite.py` lấy size/arena/latency PC → nhân hệ số an
+toàn cho LX6 → đối chiếu cadence Stop-Flow thật. Nếu latency×số-khung **≤ thời gian rảnh giữa hai mẻ**
+→ đi tiếp YOLO. Nếu không → FOMO (mất size) **hoặc** offload sang Hướng 2 (§3.2 cuối).
+
+### 3.2 Khi thêm các tác vụ khác — tranh chấp tài nguyên
+
+Model không chạy một mình. Hệ đầy đủ còn có: **(1)** chụp camera (JPEG) · **(2)** giải nén JPEG →
+xám/RGB cho CV · **(3)** classical CV (threshold + connected components: đếm + size) · **(4)** suy
+luận NN · **(5)** WiFi + HTTP đẩy kết quả lên `web/` backend · **(6)** điều khiển bơm/MOSFET theo
+thời gian · **(7)** ghi log truy xuất. Ghép chúng lại sinh các xung đột **không thấy khi chạy model lẻ**:
+
+1. **Tràn PSRAM (dung lượng):** framebuffer camera + weights (2.6MB) + arena (~1MB) **không cùng
+   sống trong 4MB PSRAM** được. Riêng giải nén UXGA→RGB565 đã là 1600×1200×2 = **3.84MB** → nuốt gần
+   hết PSRAM. → **Bắt buộc:** làm việc ở VGA, và **giải phóng buffer camera trước khi cấp arena** (không
+   giữ đồng thời).
+2. **RAM nội × WiFi (thủ phạm kinh điển của ESP32-CAM):** stack WiFi/TCP cần ~40–50KB **RAM nội liền
+   mạch**; camera driver cũng cần RAM nội cho DMA descriptor. Hai bên giành nhau → lỗi quen thuộc
+   "camera init fail / no mem / Guru Meditation khi bật WiFi". → **Bắt buộc:** đặt framebuffer trong
+   PSRAM (`CAMERA_FB_IN_PSRAM`), giữ heap nội càng trống càng tốt.
+3. **Băng thông PSRAM (tranh chấp bus):** DMA camera ghi framebuffer vào PSRAM **cùng lúc** inference
+   đọc weights/activation từ PSRAM → cả hai chậm lại (chung bus QSPI). → **đừng chụp và suy luận song song.**
+4. **Flash/XIP:** nếu weights nằm trong flash (mmap), inference đọc weights **giành cache với việc nạp
+   lệnh** (XIP) → CPU stall. → **nạp weights vào PSRAM một lần lúc boot.**
+5. **Hai lõi (dual-core):** ghim WiFi/giao tiếp vào core 0, CV+inference vào core 1. Nhưng một lần
+   suy luận vài giây **ôm trọn core 1** → **watchdog (TWDT) có thể bắn** → phải feed WDT hoặc chia
+   nhỏ/yield trong vòng suy luận.
+6. **Điện/brownout:** camera + WiFi TX + CPU 240MHz + đóng cắt MOSFET bơm 12V → đỉnh dòng lớn; board
+   rẻ hay **sụt áp reset**. → nguồn 5V/2A chắc + tụ bù (đã ghi ở điện của bơm trong `CLAUDE.md`),
+   và tránh phát WiFi **đúng lúc** chụp/suy luận.
+7. **Timing chu kỳ:** khối suy luận vài giây **chặn vòng Stop-Flow** → phải thiết kế chu kỳ **quanh**
+   latency đó, và log timestamp cho đúng (yêu cầu traceability).
+
+**Kiến trúc khuyến nghị trên ESP32-CAM = máy trạng thái TUẦN TỰ, không đa nhiệm đồng thời:**
+```
+[dừng bơm, lắng 1–2s] → [chụp → PSRAM] → [giải nén VGA xám] → [CV: đếm + size]
+   → [giải phóng framebuffer] → [inference: whole-frame HOẶC từng crop] → [giải phóng arena]
+   → [bật WiFi → upload web/ → tắt WiFi] → [xả bơm] → lặp
+```
+Chỉ **một** hộ tiêu thụ bộ nhớ lớn sống tại mỗi thời điểm → tránh sạch mục 1–3.
+
+**Nếu tuần tự vẫn không đủ (latency×khung > thời gian mẻ, hoặc RAM vẫn tràn):** đây đúng là lý do
+**Hướng 2 tồn tại như phương án thay thế** — ESP32-CAM chỉ **chụp + (tuỳ chọn) CV + upload ảnh**,
+còn NN nặng để **offload** (web backend / Roboflow / một máy đồng hành). Đổi lại: mất tính tự trị,
+cần mạng. **Đây chính là tiêu chí chọn Hướng 1 (on-device) vs Hướng 2 (offload):** số đo §3.1 +
+tranh chấp §3.2 quyết định, không phải sở thích.
 
 ---
 
@@ -234,10 +322,12 @@ hiệu tán xạ **1D** (cửa sổ 41 mẫu).
 
 ## 8. Rủi ro & cạm bẫy (đã gặp / dễ gặp)
 
-- **Chưa có dataset thật từ rig** = rủi ro gốc. Dataset công khai (microplastics-m7mf5) chỉ để
-  **bootstrap pipeline/kiến trúc**, **không** cho ra con số accuracy thật (domain ảnh khác hẳn
-  backlit-silhouette của Aqua Scope — xem `ml/README.md` Phase A mục 3). Số accuracy chỉ có nghĩa
-  sau khi train trên ảnh thật (Phase D).
+- **Dataset đã có, nhưng khớp domain deploy tới đâu?** Rủi ro không còn là "thiếu dữ liệu" mà là
+  **domain-match**: nếu dataset là ảnh công khai (vd microplastics-m7mf5) thì nó tốt để
+  **bootstrap pipeline/kiến trúc** nhưng **không** cho con số accuracy thật (domain khác hẳn
+  backlit-silhouette của Aqua Scope — `ml/README.md` Phase A mục 3); số accuracy chỉ có nghĩa sau
+  khi **fine-tune trên ảnh thật từ rig**. Nếu dataset **đã là ảnh từ chính rig** ở đúng cấu hình
+  exposure/backlit sẽ deploy thì rủi ro này biến mất — cứ đi thẳng pipeline §5.
 - **Lens chưa nét ở 3–5cm** (`camera-focus-limit`, `ai_model_plan.md` Phase 0): ảnh mờ → model rác,
   không cứu bằng train/quantize. Phải xử lý TRƯỚC khi thu dataset.
 - **ESP32-CAM không có accelerator** (§3) → detector int8 có thể vẫn quá chậm; đây là ràng buộc cố
@@ -254,12 +344,14 @@ hiệu tán xạ **1D** (cửa sổ 41 mẫu).
 
 - [x] **Board deploy đã chốt: ESP32-CAM** (AI-Thinker, OV2640). Mọi lựa chọn kỹ thuật §4 bám ràng
       buộc board này (§3).
-- [ ] **Thu dataset ảnh thật từ rig** theo `ai_model_plan.md` Phase 3 (self-labeling "mẫu đã biết
-      nhãn", đúng cấu hình exposure/backlit sẽ deploy). **Đây là chặn cứng — chưa có thì các bước
-      sau vô nghĩa.**
-- [ ] Viết **script tải dataset tự động** (Task 6 — đọc `[dataset]` trong `config.toml`).
-- [ ] Chạy pipeline §5 [2]→[3]→[4a] một lượt với dataset (kể cả dataset công khai để **thử pipeline**
-      trước khi có ảnh thật), lấy **số benchmark** thật để chốt nhánh deploy (§5[5]).
+- [x] **Dataset đã có** (ở máy). Việc còn lại là xác nhận **domain-match** với ảnh rig (§8).
+- [ ] **Đo khả thi TRƯỚC khi train nhiều** (§3.1): export thử int8 → `benchmark_tflite.py` lấy
+      size/arena/latency → nhân hệ số LX6 → đối chiếu cadence Stop-Flow. Đây là **cổng đi/không**
+      quyết định giữ YOLO on-device hay lùi FOMO / offload Hướng 2.
+- [ ] Viết **script tải dataset tự động** (Task 6 — đọc `[dataset]` trong `config.toml`) — chỉ cần
+      nếu muốn tái tạo dataset từ Roboflow; nếu dataset đã ở máy thì bỏ qua.
+- [ ] Chạy pipeline §5 [2]→[3]→[4a] một lượt với dataset đang có, lấy **số benchmark** thật để chốt
+      nhánh deploy (§5[5]).
 - [ ] Chỉ khi §5[4b] cần: triển khai QAT / pruning / distillation.
 - [ ] Cập nhật `ml/README.md` (bảng "Hướng 1 — chưa làm") khi Hướng 1 chạy được thật.
 
