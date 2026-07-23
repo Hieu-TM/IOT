@@ -62,6 +62,44 @@ fillet_r     = 2.5;   // bo góc đáy–thành ≥2.5 (chống đọng)
 weir_h       = 6.0;   // mép tràn TÙY CHỌN (chặn-tràn an toàn) — không bắt buộc
 drain_port_d = 8.0;   // van xả đáy TÙY CHỌN (vệ sinh) — không thuộc chu trình
 
+// ---------------------------------------------------------------- CHỐNG SÓNG (2026-07-23)
+// Nguồn: docs/research/2026-07-23-khay-lang-song-nghien-cuu-hop-nhat.md
+// ⚠️ 4 số dưới đây LỆCH CÓ CHỦ Ý so với tài liệu nghiên cứu — lý do ghi tại chỗ.
+particle_max = 2.0;    // hạt lớn nhất trong phạm vi test (CLAUDE.md: <2mm)
+
+// (e) Cửa vào ĐỤC LỖ — thay khe hở liền 20×3 bằng N cửa sổ ngăn bởi gân.
+// Chia tia nước lớn thành nhiều tia nhỏ → tiêu tán động năng nhanh hơn nhiều.
+inlet_rib_t  = 1.2;    // bề dày gân giữa 2 cửa sổ (3 perimeter × nozzle 0.4)
+inlet_gap_w  = 3.5;    // ⚠️ LỆCH tài liệu (2.5): 2.5 chỉ dư 0.5mm so hạt 2mm, NGAY
+                       // CỬA VÀO. Hạt nghẽn ở đây = không vào khay = không đếm được
+                       // (hỏng chính phép đo, tệ hơn kẹt ở cửa ra). 3.5 = 1.75× hạt.
+inlet_n_gap  = 4;      // số cửa sổ
+inlet_pitch  = inlet_gap_w + inlet_rib_t;                              // = 4.7
+inlet_span   = inlet_n_gap * inlet_gap_w + (inlet_n_gap - 1) * inlet_rib_t;  // = 17.6
+
+// (c) VÁCH CONG tiêu năng — chắn đường đi thẳng cổng vào → cổng ra (short-circuiting)
+baffle_t     = 1.2;    // bề dày vách (3 perimeter FDM)
+baffle_r_mid = 16.4;   // ⚠️ LỆCH tài liệu (17.6): 17.6 → hành lang chỉ 1.8mm < hạt
+                       // 2mm ⇒ hạt KHÔNG lọt, kẹt trong túi cổng vào (lối thoát duy
+                       // nhất) ⇒ vi phạm ràng buộc cứng "mọi hạt ra hết".
+                       // GIÁ PHẢI TRẢ: vùng ảnh hóa Ø40 → Ø31.6. Chỉnh tham số này
+                       // sau khi in thử nếu muốn đổi cân bằng.
+baffle_h     = 7.0;    // ⚠️ LỆCH tài liệu (5.0): 5.0 < mực nước 6 ⇒ ~50% lưu lượng
+                       // tràn qua NÓC vách, xả động năng thẳng vào MẶT NƯỚC (chỗ cần
+                       // phẳng nhất). Lý do "thoát bọt" của tài liệu không áp dụng vì
+                       // vách là HÀNG RÀO HỞ 2 ĐẦU, bọt thoát tự do quanh 2 đầu mút.
+baffle_angle = 90;     // góc quét cung (độ), tâm tại −X (đối diện cổng vào)
+                       // Bo 2 đầu mút: bán nguyệt r = baffle_t/2 = 0.6 — ⚠️ tài liệu
+                       // ghi fillet_r=2.0 là BẤT KHẢ THI trên vách dày 1.2mm.
+baffle_corridor = tray_inner/2 - (baffle_r_mid + baffle_t/2);  // DẪN XUẤT = 3.0
+
+// (Bellmouth) MIỆNG LOE cổng RA — chống dồn ứ + dội sóng ngược tại miệng lỗ xả
+// Nhô VÀO lòng khay (KHÔNG khoét lõm vào thành): thành chỉ dày 2mm, khoét lõm bo
+// R=3 sẽ ăn hết thịt quanh ngạnh OD8 (còn ~0.25mm) → vỡ khi in/dùng.
+bell_fillet_r = 3.0;   // bán kính bo loe (r/d = 0.5 ≫ ngưỡng 0.15 ⇒ K: 0.5 → <0.05)
+bell_wall     = 1.2;   // bề dày vỏ loa kèn (3 perimeter)
+bell_steps    = 24;    // số đoạn xấp xỉ cung 90° khi revolve
+
 // ---------------------------------------------------------------- Đáy acrylic (cửa sổ tròn) + vòng ép
 tray_win_d = 42.0;   // đĩa acrylic TRONG, > tray_inner để chồng gờ
                      // (Ø42 là TỐI ĐA khả thi: OD khay 44 − 2×(0.35 khe + 0.65 thịt hốc);
@@ -246,6 +284,21 @@ assert(fov_w_est <= tube_id + 0.01, "nón FOV không được chạm thành ốn
 assert(water_depth < tray_depth, "mực nước phải thấp hơn thành khay");
 assert(outlet_bore >= 3 * 2.0 - 0.01, "lòng cổng ra ≥ 3× hạt 2mm (chống kẹt)");
 assert(bl_diff_d >= tray_inner, "tấm khuếch tán phải phủ hết vùng ảnh hóa");
+
+// --- Assert an toàn hạt cho cụm chống sóng (2026-07-23) ---
+assert(inlet_gap_w >= 1.5 * particle_max,
+       "cửa sổ vào phải ≥1.5× hạt — nghẽn ở CỬA VÀO nghĩa là hạt không vào được khay, hỏng phép đếm");
+assert(inlet_span <= inlet_slot_w,
+       "cụm cửa sổ + gân phải nằm gọn trong bề rộng khe vào 20mm");
+assert(baffle_corridor >= 1.5 * particle_max,
+       "hành lang sau vách cong phải ≥1.5× hạt — đây là lối thoát DUY NHẤT của túi cổng vào");
+assert(baffle_h > water_depth,
+       "vách phải CAO HƠN mực nước, nếu không dòng tràn qua nóc đập thẳng vào mặt nước");
+assert(baffle_r_mid + baffle_t/2 < tray_inner/2 - 0.01,
+       "vách cong phải nằm trong lòng khay");
+assert(bell_fillet_r >= 0.15 * outlet_bore,
+       "bo loe phải đủ tròn (r/d ≥ 0.15) mới hạ được hệ số tổn thất K");
+
 assert(led_mod_w + 2*shelf_hole_clr < tray_inner, "lỗ vách module phải nằm gọn trong lòng");
 
 echo(str("== Aqua Scope constants OK == tube OD/ID/H = ", tube_od, "/", tube_id, "/", tube_h,
