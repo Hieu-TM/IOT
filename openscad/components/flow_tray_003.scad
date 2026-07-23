@@ -149,29 +149,50 @@ module arc_baffle() {
 function bell_r(a) = outlet_bore/2 + bell_fillet_r - bell_fillet_r * sin(a);
 function bell_z(a) = bell_fillet_r - bell_fillet_r * cos(a);
 
-// Vỏ ngoài loa kèn (đặc). Kéo dài thêm 1mm quá cổ để CHỌC vào thành khay
-// (giao transversal, tránh mặt tiếp tuyến gây non-manifold khi union).
-module bell_outer() {
-    rotate_extrude($fn = 96)
-        polygon(points = concat(
-            [[0, 0]],
-            [for (i = [0 : bell_steps]) let (a = i * 90 / bell_steps)
-                [bell_r(a) + bell_wall, bell_z(a)]],
-            [[bell_r(90) + bell_wall, bell_fillet_r + 1.0],
-             [0, bell_fillet_r + 1.0]]
-        ));
+// Biên dạng 2D LÒNG loa kèn (dùng chung: vừa để khoét bell_void(), vừa làm nền
+// cho offset() pháp tuyến của bell_outer() — 1 nguồn duy nhất, không lặp toạ độ).
+module bell_profile_2d() {
+    polygon(points = concat(
+        [[0, 0]],
+        [for (i = [0 : bell_steps]) let (a = i * 90 / bell_steps)
+            [bell_r(a), bell_z(a)]],
+        [[outlet_bore/2, bell_fillet_r + 2.0],
+         [0, bell_fillet_r + 2.0]]
+    ));
 }
 
 // Lòng loa kèn (phần bị khoét). Kéo dài quá cổ để nối liền lòng ngạnh Ø6.
 module bell_void() {
+    rotate_extrude($fn = 96) bell_profile_2d();
+}
+
+// Vỏ ngoài loa kèn (đặc) — OFFSET PHÁP TUYẾN THẬT bằng offset(r=bell_wall), KHÔNG
+// PHẢI dịch bán kính cùng tham số a như bản cũ. Dịch bán kính (bell_r(a)+bell_wall)
+// là dịch NGANG theo trục r tại from cùng góc a — chỉ đúng bề dày bell_wall tại nơi
+// tiếp tuyến biên dạng THEO PHƯƠNG BÁN KÍNH (a=90, cổ ống); tại miệng loe (a=0) tiếp
+// tuyến lại RADIAL nên phép dịch đó suy biến gần về 0. Đo thực tế (review 2026-07-23):
+// bề dày thật tại a=0 chỉ còn 0.231mm — dưới cả 1 lớp nozzle 0.4mm, in ra sẽ tưa mép.
+// offset(r=...) tính khoảng cách PHÁP TUYẾN thật dọc suốt biên dạng, kể cả tại điểm
+// gấp a=0 (biên dạng void gập 180° tại đó — offset tự chèn cung bo bán kính bell_wall
+// quanh điểm gấp), nên bề dày ĐỀU bell_wall khắp nơi, mép miệng thành gờ bo tròn thay
+// vì lưỡi dao.
+// Kẹp lại bằng intersection() 2D SAU offset (không phải trước — offset phải thấy đủ
+// biên dạng gốc mới tính đúng pháp tuyến):
+//   - x ≥ 0: offset đẩy 2 điểm nằm trên trục quay (x=0, đầu (0,0) và (0, bell_fillet_r
+//     +2.0)) ra x=−bell_wall; rotate_extrude KHÔNG chấp nhận hình học x<0.
+//   - y ≤ bell_fillet_r + 1.0 (toạ độ biên dạng cục bộ = trục Z cục bộ trước rotate,
+//     thành TRỤC X TOÀN CỤC sau rotate([0,90,0]) trong bellmouth_boss()): GIỮ NGUYÊN
+//     hành vi cũ — vỏ ngoài dừng đúng 1mm quá cổ để CHỌC transversal vào thành khay
+//     (giao mặt cắt ngang, tránh mặt tiếp tuyến gây non-manifold khi union). Không kẹp
+//     thì offset sẽ đẩy vỏ tới tận bell_fillet_r+2.0+bell_wall, thò quá mặt ngoài thành
+//     khay r=tray_outer/2.
+module bell_outer() {
     rotate_extrude($fn = 96)
-        polygon(points = concat(
-            [[0, 0]],
-            [for (i = [0 : bell_steps]) let (a = i * 90 / bell_steps)
-                [bell_r(a), bell_z(a)]],
-            [[outlet_bore/2, bell_fillet_r + 2.0],
-             [0, bell_fillet_r + 2.0]]
-        ));
+        intersection() {
+            offset(r = bell_wall) bell_profile_2d();
+            translate([0, -1000])
+                square([1000, 1000 + bell_fillet_r + 1.0]);
+        }
 }
 
 // Cụm loa kèn đã đặt đúng vị trí + CẮT PHẲNG tại sàn z=0.
