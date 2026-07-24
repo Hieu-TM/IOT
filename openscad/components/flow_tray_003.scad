@@ -220,9 +220,37 @@ module bellmouth_boss() {
     }
 }
 
+// --- (2b) GỜ NỐI vách cong ↔ thành khay (sửa lỗi Critical: vách cong trôi nổi) ---
+// arc_baffle() không chạm đáy (đáy khay hở, đĩa acrylic tách rời — xem đầu file)
+// và không chạm thành (hành lang baffle_corridor=3.0mm là khoảng hở CỐ Ý cho hạt
+// đi qua). Không union gì thêm thì vách là 1 khối RỜI trong khoang → CGAL báo
+// Volumes=3 (thân + rỗng ngoài + vách rời), khi in ra thành 1 mảnh nhựa lỏng lẻo
+// rồi trôi tới kẹt cổng ra Ø6 — đúng thứ mà cả cụm chống sóng này phải ngăn.
+//
+// Sửa bằng 3 gờ nối bắc CAO HƠN MẶT NƯỚC (z: baffle_rib_z_bot..baffle_h, tức
+// water_depth..baffle_h — vách được cố ý làm cao hơn mực nước đúng 1mm cho mục
+// đích này). Hạt luôn di chuyển ngập nước ở z < water_depth nên không bao giờ
+// chạm gờ; hành lang 3.0mm dưới mực nước (z=0..water_depth) thông suốt trọn vẹn.
+// ⚠️ ĐỪNG hạ gờ xuống thấp hơn — assert baffle_rib_z_bot ở constants.scad sẽ bắt,
+// nhưng quan trọng hơn là đừng phá lý do vật lý: hạ xuống là gờ cắt ngang dòng
+// chảy ngập nước, tái tạo đúng nguy cơ kẹt hạt mà bản vẽ này đang tránh.
+//
+// Biên r LẤN 0.1mm vào cả vách lẫn thành (không dừng tiếp tuyến đúng mép) để có
+// chồng thể tích thật — mặt tiếp tuyến là nguồn non-manifold kinh niên trong file
+// này (xem các cảnh báo tương tự ở bellmouth_boss() phía trên).
+module baffle_ribs() {
+    r_bridge_in  = baffle_r_mid + baffle_t/2 - 0.1;  // 0.1mm vào trong vách
+    r_bridge_out = tray_inner/2 + 0.1;               // 0.1mm vào trong thành
+    for (a = baffle_rib_angles)
+        rotate([0, 0, a])
+            translate([r_bridge_in, -baffle_rib_w/2, baffle_rib_z_bot])
+                cube([r_bridge_out - r_bridge_in, baffle_rib_w, baffle_h - baffle_rib_z_bot]);
+}
+
 // --- Chi tiết NẰM TRONG lòng Ø40 — phải union SAU khi tray_shell() đã khoét lòng ---
 module tray_internals() {
     arc_baffle();
+    baffle_ribs();
     bellmouth_boss();
 }
 

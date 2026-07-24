@@ -93,6 +93,23 @@ baffle_angle = 90;     // góc quét cung (độ), tâm tại −X (đối diệ
                        // ghi fillet_r=2.0 là BẤT KHẢ THI trên vách dày 1.2mm.
 baffle_corridor = tray_inner/2 - (baffle_r_mid + baffle_t/2);  // DẪN XUẤT = 3.0
 
+// GỜ NỐI (rib) nối vách cong vào thành khay — sửa lỗi Critical: vách cong KHÔNG
+// chạm gì (đáy khay hở, đối diện bellmouth) → 2 khối rời (CGAL Volumes=3), sẽ in
+// thành mảnh nhựa RỜI rơi vào lòng khay rồi trôi ra kẹt cổng Ø6. 3 gờ nối vách↔
+// thành, đặt Ở TRÊN MẶT NƯỚC (z: water_depth → baffle_h — vách cao hơn nước đúng
+// để chừa khoảng này) nên hạt (luôn ngập nước, di chuyển ở z<water_depth) không
+// bao giờ chạm gờ; hành lang baffle_corridor 3.0mm dưới mực nước vẫn thông suốt
+// 100% theo chiều sâu ngập z=0..water_depth. TUYỆT ĐỐI không hạ z dưới xuống
+// dưới water_depth — làm vậy là tái tạo đúng lỗi Critical đã sửa ở đây.
+baffle_rib_n      = 3;              // số gờ nối
+baffle_rib_w      = 3.0;            // bề rộng tiếp tuyến mỗi gờ (đủ khỏe, ≥ nozzle×~7)
+baffle_rib_angles = [150, 180, 210]; // góc đặt gờ (độ) — trong khoảng quét vách 135°–225°
+// Đáy gờ TÁCH RIÊNG khỏi water_depth (không viết thẳng water_depth trong module)
+// để assert bên dưới có ý nghĩa thật: nếu sau này ai "dọn gọn" hạ đáy gờ xuống
+// (vd đổi thành water_depth − 1) thì assert bắt được ngay khi render, thay vì
+// một assert luôn-đúng không bao giờ fail.
+baffle_rib_z_bot  = water_depth;    // đáy gờ (mm) — PHẢI ≥ water_depth, xem assert
+
 // (Bellmouth) MIỆNG LOE cổng RA — chống dồn ứ + dội sóng ngược tại miệng lỗ xả
 // Nhô VÀO lòng khay (KHÔNG khoét lõm vào thành): thành chỉ dày 2mm, khoét lõm bo
 // R=3 sẽ ăn hết thịt quanh ngạnh OD8 (còn ~0.25mm) → vỡ khi in/dùng.
@@ -296,6 +313,8 @@ assert(baffle_corridor >= 1.5 * particle_max,
        "hành lang sau vách cong phải ≥1.5× hạt — đây là lối thoát DUY NHẤT của túi cổng vào");
 assert(baffle_h > water_depth,
        "vách phải CAO HƠN mực nước, nếu không dòng tràn qua nóc đập thẳng vào mặt nước");
+assert(baffle_rib_z_bot >= water_depth,
+       "đáy gờ nối vách↔thành PHẢI ≥ mực nước — hạ xuống dưới mực nước là gờ cắt");
 assert((baffle_r_mid - baffle_t/2) * 2 >= 25.0,
        "vùng ảnh còn lại (đường kính trong của vách) phải ≥25mm — vách đẩy vào sâu quá thì không còn chỗ soi hạt");
 assert(bell_fillet_r >= 0.15 * outlet_bore,
