@@ -25,6 +25,8 @@
 | `print_led_shelf.stl` | Vách đỡ module LED **rời** | Lỗ module +0.4mm dung sai |
 | `print_slot_plugs.stl` | 2 nút bịt **khe dọc** (chống lọt sáng) | In khít khe VÀO 24 / RA 12 |
 | `print_prescreen.stl` | Lưới lọc thô khe >5mm ở cổng vào | Khe >5mm để hạt 1–5mm lọt |
+| `print_pump_station.stl` | Đế liền + hộp che board L298N (hở nắp) + 2 yên kẹp ôm bơm RS365 | PETG (cần dẻo cho khe lồng yên kẹp); in phẳng, không support |
+| `print_pump_station_lid.stl` | Nắp hộp L298N (tháo được, 2 vít M3 tự-ren) | In phẳng |
 
 > **Cài đặt in gợi ý:** layer 0.2mm, infill ≥30%, vật liệu PETG (kháng nước tốt hơn PLA). Vỏ housing là chi
 > tiết cao nhất (~108mm) — kiểm giường in đủ cao.
@@ -149,6 +151,15 @@ Sơ đồ nguồn (chung GND bắt buộc):
    về mức TẮT ngay** trước khi cấu hình, tránh bơm tự chạy lúc boot (GPIO thả nổi).
 3. Hàn **tụ 0.1µF** ngang 2 cực bơm (chống nhiễu chổi than — nếu không ảnh sẽ nhiễu và ESP32 dễ treo).
 4. Đặt bơm **tách rời** khối quang (cách ly rung). Nối ống theo chuỗi ở §8.
+5. **Gá bơm + board vào trạm gọn (`print_pump_station.stl`):** lồng board L298N vào
+   hộp (tựa lên 4 gờ góc, không cần khớp lỗ vít), bắt nắp `print_pump_station_lid.stl`
+   bằng 2 vít M3 tự-ren. Ép thân trụ động cơ RS365 từ TRÊN xuống vào 2 yên kẹp (khe
+   hẹp hơn Ø lỗ — PETG hơi dẻo, ép nhẹ tay); nếu lỏng, luồn zip-tie qua rãnh trên
+   đỉnh yên xiết thêm. Dây 12V vào / dây ra động cơ / dây logic đi qua 3 khe ở 3
+   cạnh hộp, chạy trong rãnh nông trên mặt đế tới yên kẹp — không để dây lòng thòng.
+   ⚠️ Kích thước board L298N (43×43×27mm) và Ø thân bơm (31.5mm) trong model là
+   ƯỚC TÍNH — nếu hàng thật lệch nhiều, sửa `l298n_l/w/h` và `pump_motor_od` trong
+   `openscad/constants.scad` rồi in lại (không cần sửa gì khác).
 
 Đường ống (chuỗi nối tiếp, bơm **hút** từ đầu ra):
 
