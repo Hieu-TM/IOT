@@ -1,10 +1,18 @@
 .claude/
+.cursor/
+.gemini/
+.kiro/
 .theia/
 .vscode/
 build/
 bin/
 out/
 *.local
+__pycache__/
+.codegraph/
 
 # Web backend runtime data (SQLite DB + captured/mock images) — not committed
 web/backend/data/
+
+# Raw collected dataset images — too large for git, not source
+dataset_collector/dataset/

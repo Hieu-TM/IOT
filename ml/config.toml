@@ -63,7 +63,7 @@ retries = 2                         # so lan thu lai khi loi
 # class_agnostic_nms, max_detections.
 # DOI MODEL MOI = doi mot dong model_id o day, khong can sua gi tren Roboflow.
 # [roboflow.extra_inputs]
-# model_id = "microplastics-m7mf5-eallk/2"
+# model_id = "microplastics-m7mf5-eallk/3"
 
 [dataset]
 # Huong 1 - tai dataset ve de tu train (weights KHONG tai duoc, nhung dataset thi duoc)

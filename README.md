@@ -240,10 +240,24 @@ Bản ý tưởng đầu (huỳnh quang UV + FOMO + kính nổi + cự ly 10–1
 * [implementation_plan.md](file:///c:/University/Semester%204/IOT102/project/implementation_plan.md): Kế hoạch dựng mô hình 3D OpenSCAD + bảng hằng số baseline.
 * [technical_specs.md](file:///c:/University/Semester%204/IOT102/project/technical_specs.md): Thông số cơ khí trích xuất từ các tệp STL tham khảo.
 * `plan.md`: Kế hoạch build mô hình 3D (quyết định chốt G1–G5 + thứ tự + kiểm chứng).
-* `openscad/` **(ĐÃ DỰNG 2026-07-07)**: mô hình OpenSCAD hoàn chỉnh — `constants.scad` (hằng số + assert),
-  `components/*.scad` (9 file), `aqua_scope_assembly_001.scad` (lắp ghép tổng, cờ `explode`/`show_*`),
-  `print/*.scad → *.stl` (6 chi tiết in, đã kiểm manifold). Kiến trúc **lắp từ đáy**: vỏ 1 ống liền
+* [`thiet_ke_hop_den_nen.md`](file:///c:/University/Semester%204/IOT102/project/thiet_ke_hop_den_nen.md): Chi tiết thiết kế hộp đèn nền "LED xuôi" (chốt 2026-07-07).
+* `HUONG_DAN_LAP_RAP.md`: Tutorial thực thi — từ chi tiết đã in/đã mua → lắp trạm hoàn chỉnh → nạp firmware.
+* `ai_model_plan.md`: Kế hoạch tạo & train model AI (classifier phân loại hạt) trong pipeline hybrid.
+* `web_plan.md`: Spec+plan gộp bản đầu của web/backend — **đã superseded 2026-07-14**, giữ để tra cứu bối cảnh; nguồn sự thật hiện tại là cặp spec/plan trong `docs/superpowers/` (xem bên dưới).
+* `openscad/` **(ĐÃ DỰNG 2026-07-07, tiếp tục sửa)**: mô hình OpenSCAD hoàn chỉnh — `constants.scad` (hằng số + assert),
+  `components/*.scad` (bản mới nhất của mỗi chi tiết thắng — vd. `top_cap_004` thay `_001`–`_003`),
+  `aqua_scope_assembly_001.scad` (lắp ghép tổng, cờ `explode`/`show_*`/`cam_variant`),
+  `print/*.scad → *.stl` (9 chi tiết in, đã kiểm manifold). Kiến trúc **lắp từ đáy**: vỏ 1 ống liền
   (đen trên/trắng dưới), khay + đĩa acrylic + vòng ép snap-fit + màng + vách LED đều luồn/tháo từ dưới;
-  2 khe dọc ±X cho ngạnh ống nước (có nút bịt chống lọt sáng).
+  2 khe dọc ±X cho ngạnh ống nước (có nút bịt chống lọt sáng). Có biến thể **ESP32-CAM** (`cam_variant=1`)
+  song song với bản gốc XIAO.
 * [base/](file:///c:/University/Semester%204/IOT102/project/base): STL bệ gốc Matchboxscope — **chính là nắp trụ** (in sẵn, tái dùng nguyên bản, không dựng nắp mới). **Đường kính thân trụ lấy đúng footprint của base (~50×52mm)**, ống THẲNG không phình rộng.
 * [perestaltic pump/](file:///c:/University/Semester%204/IOT102/project/perestaltic%20pump): STL bơm nhu động Planktoscope Mini — **chỉ tham khảo, ĐÃ LOẠI** (quá chậm). Baseline dùng **bơm màng RS365 12V** chủ động.
+* [`so_do/`](file:///c:/University/Semester%204/IOT102/project/so_do): Sơ đồ tổng quan hệ thống + chi tiết hộp đèn nền (SVG).
+* [`firmware/`](file:///c:/University/Semester%204/IOT102/project/firmware): Firmware ESP32. Bản **chính thức**: [`aqua_scope_station/`](file:///c:/University/Semester%204/IOT102/project/firmware/aqua_scope_station) (ESP32-CAM AI-Thinker, port từ `esp32-cam-webserver` easytarget + `/device` audit + lưu cấu hình flash). Các thư mục khác (`aqua_scope_cam/`, `Esp32 cam/`, `esp32-cam-webserver/` repo lồng, `pump_stopflow_test/`) là tiền đề/tham khảo/công cụ test độc lập — xem bảng phân loại trong README của `aqua_scope_station/`.
+* [`dataset_collector/`](file:///c:/University/Semester%204/IOT102/project/dataset_collector): Firmware (bản sao của `esp32-cam-webserver`, thêm nút thu dataset vào web UI) + `collect_dataset.py` + `diagnose.py` — công cụ thu ảnh dataset huấn luyện, tách riêng khỏi firmware của trạm.
+* [`ml/`](file:///c:/University/Semester%204/IOT102/project/ml): Pipeline detection (Roboflow `microplastics-m7mf5`) — train/export/suy luận (2 nhánh backend Roboflow hoặc local `ultralytics`), `--from-board` chụp thẳng từ board ghi sổ audit. Xem `ml/deploy_options.md` cho 2 hướng deploy (offload PC vs on-device).
+* [`web/`](file:///c:/University/Semester%204/IOT102/project/web): Backend FastAPI + dashboard truy xuất nguồn gốc (traceability) — nhận kết quả từ `ml`, phục vụ lịch sử/audit theo mã mẫu. Spec/plan hiện hành ở `docs/superpowers/specs|plans/2026-07-14-web-*`.
+* [`Aqua Scope dashboard/`](file:///c:/University/Semester%204/IOT102/project/Aqua%20Scope%20dashboard): Design handoff (HTML/JSX tham chiếu, không phải code sản phẩm) cho dashboard QC ở `web/` — đã hiện thực hoá với vài lệch có chủ đích (SVG server-render thay Chart.js, bỏ Google Fonts/state-simulator).
+* [`variants/`](file:///c:/University/Semester%204/IOT102/project/variants): Hướng nghiên cứu thay thế — cảm biến quang tán xạ 1D (photodiode + NeuralCasting), bỏ camera/holography và bỏ Stop-Flow. Không phải baseline, xem `variants/README.md`.
+* [`docs/superpowers/`](file:///c:/University/Semester%204/IOT102/project/docs/superpowers): Spec/plan hiện hành theo chuẩn superpowers (`specs/`, `plans/`, `prompts/`) — nguồn sự thật mới nhất cho web, ml, firmware station/dataset-collector, thay cho các file `*_plan.md` rời ở gốc repo khi đã được đánh dấu superseded.
