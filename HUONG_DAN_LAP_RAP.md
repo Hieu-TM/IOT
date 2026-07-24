@@ -145,6 +145,14 @@ Sơ đồ nguồn (chung GND bắt buộc):
    Tụ gốm 0.1µF ── hàn NGAY 2 cực motor bơm (sát motor nhất có thể)
 ```
 
+> ⚠️ **Hai lựa chọn driver — CHỌN MỘT, đừng lắp lẫn cả hai:** sơ đồ nguồn và các bước 1–2 ngay dưới đây
+> mô tả phương án **relay** (đóng/mở tiếp điểm NO) — vẫn là một cách lắp hợp lệ. Bước 5 (gá board vào
+> `print_pump_station.stl`) lại nói tới **L298N** — một module driver khác hẳn (cầu H, chân IN1/IN2/ENA),
+> không phải relay. Tài liệu này **chưa có** sơ đồ đấu GPIO → IN1/IN2/ENA cho L298N (đây là lỗ hổng đã biết,
+> cần bổ sung riêng, không phải hai driver dùng chung được). Nếu build theo relay: bỏ qua phần L298N ở bước 5.
+> Nếu build theo L298N: bỏ qua sơ đồ nguồn + bước 1–2 + ghi chú "bật/tắt relay bằng tay" ở cuối mục 7, và tự
+> tra datasheet L298N để đấu ENA/IN1/IN2 trước khi cấp điện.
+
 Đấu dây:
 1. Bơm qua tiếp điểm **NO** của relay (mặc định TẮT khi chưa cấp tín hiệu).
 2. Coil relay ăn **5V**, IN nối 1 GPIO trống của XIAO. Nhiều relay **active-low** → trong `setup()` phải **set GPIO
