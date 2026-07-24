@@ -22,7 +22,7 @@ use <components/top_lid_xiao_001.scad>  // nắp đậy trên cùng baseline XIA
 use <components/top_cap_esp32cam_001.scad>  // biến thể ESP32-CAM (cam_variant=1)
 use <components/esp32cam_001.scad>
 use <components/tube_body_002.scad>   // _002: bỏ vòng đỡ khay (chặn đường luồn từ đáy)
-use <components/flow_tray_002.scad>   // _002: đáy khay mở (hết đĩa đặc 1mm bít đáy)
+use <components/flow_tray_003.scad>   // _003: cụm chống sóng (vách cong + loe + cửa đục lỗ)
 use <components/window_retainer_001.scad>
 use <components/glass_window_top_001.scad>
 use <components/light_box_002.scad>   // _002: nút bịt khe kiêm cột đỡ khay chữ L
