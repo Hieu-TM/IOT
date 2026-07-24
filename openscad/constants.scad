@@ -164,6 +164,59 @@ pump_bbox   = [90, 40, 35]; // placeholder bơm màng RS365 12V MUA SẴN (khôn
 pump_barb_od = 8.0;         // ngạnh cổng vào/ra bơm (OD)
 // Điện (không thuộc mô hình): relay module 1 kênh (demo), 12V/2A, tụ 0.1µF ngang bơm.
 
+// ---------------------------------------------------------------- Trạm bơm gọn: đế liền + hộp L298N + kẹp bơm (2026-07-24)
+// Nguồn: docs/superpowers/specs/2026-07-24-pump-station-mount-design.md
+// ⚠️ l298n_* và pump_motor_od là số ĐIỂN HÌNH/ƯỚC TÍNH — CHƯA ĐO board/bơm thật.
+// Hộp L298N cố ý rộng rãi (l298n_box_clr) để chịu sai số; yên kẹp bơm có rãnh
+// zip-tie bù sai số đường kính nếu bơm thật khác pump_motor_od.
+l298n_l             = 43.0;  // dài board L298N (điển hình, chưa đo)
+l298n_w             = 43.0;  // rộng board
+l298n_h             = 27.0;  // cao kể cả tản nhiệt nhô lên
+l298n_box_wall      = 2.0;   // thành hộp
+l298n_box_clr       = 2.5;   // khe hở mỗi bên quanh board (khay dung sai, KHÔNG khớp lỗ vít)
+l298n_foot_h        = 2.0;   // gờ đỡ góc board bên trong hộp
+l298n_lid_t         = 2.0;   // dày nắp hộp
+l298n_lid_screw_d   = 2.8;   // lỗ tự-ren M3 giữ nắp (2 góc chéo, trong gờ hộp)
+l298n_lid_clr_d     = 3.2;   // lỗ thông M3 trên nắp
+l298n_vent_w        = 3.0;   // bề rộng mỗi khe thoát khí
+l298n_vent_n        = 5;     // số khe thoát khí (cạnh đối diện khe dây logic)
+
+wire_notch_w        = 6.0;   // bề rộng khe dây (xuyên thành, hở miệng hộp — nắp ép giữ dây)
+wire_notch_h        = 5.0;   // sâu khe dây tính từ miệng hộp xuống
+
+pump_motor_od       = 31.5;  // Ø thân trụ động cơ RS365 — ƯỚC TÍNH pump_bbox[2]*0.9 = 35*0.9,
+                              // CHƯA ĐO bơm thật
+pump_clamp_clr      = 1.0;   // khe hở giữa lòng máng kẹp và thân bơm
+pump_clamp_t        = 2.4;   // bề dày thành máng kẹp (dưới lỗ khoan)
+pump_clamp_w        = 8.0;   // bề rộng (dọc trục bơm) mỗi yên kẹp
+pump_clamp_slot_w   = 24.0;  // bề rộng khe lồng từ đỉnh khối xuống lỗ khoan — HẸP HƠN
+                              // pump_clamp_id để PETG hơi dẻo ép giữ bơm khi lồng từ trên
+pump_clamp_strap_w  = 3.0;   // rãnh trên đỉnh yên để luồn zip-tie xiết thêm (bù sai số Ø bơm thật)
+pump_clamp_gap      = 40.0;  // khoảng cách tâm 2 yên kẹp dọc trục bơm
+
+pump_station_base_t = 3.0;   // dày đế
+pump_station_foot_h = 2.0;   // chân đế 4 góc
+pump_station_gap     = 20.0; // rãnh dây giữa hộp L298N và cụm yên kẹp bơm
+pump_station_margin  = 4.0;  // biên đế quanh hộp/yên kẹp (mép ngoài cùng)
+
+// Dẫn xuất — hộp L298N (đáy hộp = mặt đế, KHÔNG có sàn riêng)
+l298n_box_id_l = l298n_l + 2*l298n_box_clr;                  // = 48
+l298n_box_id_w = l298n_w + 2*l298n_box_clr;                  // = 48
+l298n_box_h    = l298n_h + l298n_foot_h + 3.0;               // = 32: cao thành từ mặt đế tới miệng hộp
+l298n_box_od_l = l298n_box_id_l + 2*l298n_box_wall;          // = 52
+l298n_box_od_w = l298n_box_id_w + 2*l298n_box_wall;          // = 52
+
+// Dẫn xuất — yên kẹp bơm (khối vuông, tâm lỗ khoan = pump_clamp_od/2 → đối xứng
+// trên/dưới → thành dưới lỗ khoan luôn dày đúng bằng pump_clamp_t, không phụ thuộc
+// số đo pump_bbox — ưu tiên AN TOÀN KẾT CẤU hơn khớp pixel với model placeholder)
+pump_clamp_id = pump_motor_od + 2*pump_clamp_clr;   // = 33.5: Ø lòng máng kẹp
+pump_clamp_od = pump_clamp_id + 2*pump_clamp_t;     // = 38.3: Ø ngoài máng kẹp = tổng cao khối yên
+
+// Dẫn xuất — bố cục đế (đơn vị mm)
+pump_station_len = pump_station_margin + l298n_box_od_l + pump_station_gap
+                   + pump_clamp_gap + pump_clamp_w + pump_station_margin;   // = 128
+pump_station_wid = max(l298n_box_od_w, pump_clamp_od) + 2*pump_station_margin; // = 60
+
 // ---------------------------------------------------------------- BIẾN THỂ ESP32-CAM (tùy chọn — KHÔNG ảnh hưởng baseline XIAO)
 // Nắp adapter in mới `top_cap_esp32cam` thay cho base Matchboxscope khi dùng
 // board ESP32-CAM (AI-Thinker); CÙNG giao diện bích 4×M3 30×30 → thay thế được.
@@ -321,6 +374,20 @@ assert(bell_fillet_r >= 0.15 * outlet_bore,
        "bo loe phải đủ tròn (r/d ≥ 0.15) mới hạ được hệ số tổn thất K");
 
 assert(led_mod_w + 2*shelf_hole_clr < tray_inner, "lỗ vách module phải nằm gọn trong lòng");
+
+// --- Assert an toàn cho trạm bơm gọn (2026-07-24) ---
+assert(l298n_box_id_l > l298n_l && l298n_box_id_w > l298n_w,
+       "khoang hộp L298N phải rộng hơn board (có khe hở dung sai lắp)");
+assert(pump_clamp_slot_w < pump_clamp_id,
+       "khe lồng yên kẹp phải HẸP HƠN Ø lỗ khoan mới giữ được bơm bằng ép đàn hồi");
+assert(pump_clamp_id > pump_motor_od,
+       "lòng máng kẹp phải lớn hơn Ø thân bơm (có khe hở lắp pump_clamp_clr)");
+assert(pump_clamp_od/2 - pump_clamp_id/2 >= 2.0,
+       "thành dưới yên kẹp (dưới lỗ khoan) phải dày ≥2mm để không vỡ khi ép bơm vào");
+assert(pump_clamp_gap > pump_clamp_w,
+       "2 yên kẹp không được chồng lên nhau dọc trục bơm");
+assert(pump_station_wid > pump_clamp_od && pump_station_wid > l298n_box_od_w,
+       "đế phải rộng hơn cả hộp L298N lẫn yên kẹp bơm (không hụt biên)");
 
 echo(str("== Aqua Scope constants OK == tube OD/ID/H = ", tube_od, "/", tube_id, "/", tube_h,
          " | z_lens = ", z_lens, " | tray outer/inner = ", tray_outer, "/", tray_inner));
