@@ -101,12 +101,16 @@ void enterPhase(Phase p) {
   if (!willRun && curDuty > 0) rampDuty(0, timing.rampDownMs);
 
   phase = p;
-  phaseStartMs = millis();
 
   if (willRun) {
     uint8_t target = (p == FILLING) ? timing.fillDuty : timing.flushDuty;
     rampDuty(target, timing.rampUpMs);
   }
+
+  // Bat dau dong ho pha SAU khi vuot xong, de toan bo fillMs/flushMs co thuc te o
+  // muc cruise/flush. Truoc day timestamp chay tran tren thoi gian vuot, tao ra
+  // am lenh: fillMs 5000 voi rampUpMs 250 chi co ~4750ms cruise thuc te.
+  phaseStartMs = millis();
 
   Serial.printf("[%lu ms] -> %s | duty=%u%%\n", phaseStartMs, phaseName(p), curDuty);
   if (p == SETTLING) {
@@ -145,7 +149,7 @@ void printHelp() {
   Serial.println(F("  ?         - in lai menu"));
   Serial.println(F(""));
   Serial.println(F("CACH DO CRUISE DUTY: chay 'a', nhin mat nuoc luc FILLING."));
-  Serial.println(F("Con nghe 'uc uc'/xoay phieu o mieng xa -> ha 'd' 5%% roi thu lai."));
+  Serial.println(F("Con nghe 'uc uc'/xoay phieu o mieng xa -> ha 'd' 5% roi thu lai."));
   Serial.println(F("Lay muc THAP NHAT ma van day nuoc len du muc trong fillMs."));
 }
 
