@@ -1,9 +1,11 @@
 #include "aqua_prefs.h"
+#include "aqua_pump.h"
 
 #include <Preferences.h>
 
 static Preferences prefs;
-static const char *NVS_NS = "aquacam";
+static const char *NVS_NS      = "aquacam";
+static const char *NVS_NS_PUMP = "aquapump";
 
 // Trần framesize gần nhất mà setup() truyền vào qua applyDefaults/Load - nhớ
 // lại để aquaPrefsReset() (gọi từ /control?var=reset, KHÔNG biết gì về
@@ -108,16 +110,39 @@ void aquaPrefsSave(sensor_t *s) {
   prefs.putInt("vflip", s->status.vflip);
   prefs.putBool("saved", true);
   prefs.end();
+
+  // --- Lưu cấu hình bơm (namespace riêng, tránh va chạm key) ---
+  PumpTiming *pt = aquaPumpTiming();
+  prefs.begin(NVS_NS_PUMP, false);
+  prefs.putULong("fillMs",     pt->fillMs);
+  prefs.putULong("settleMs",   pt->settleMs);
+  prefs.putULong("flushMs",    pt->flushMs);
+  prefs.putULong("cooldownMs", pt->cooldownMs);
+  prefs.putULong("rampUpMs",   pt->rampUpMs);
+  prefs.putULong("rampDownMs", pt->rampDownMs);
+  prefs.putUChar("fillDuty",   pt->fillDuty);
+  prefs.putUChar("flushDuty",  pt->flushDuty);
+  prefs.putBool("saved", true);
+  prefs.end();
 }
 
 void aquaPrefsReset(sensor_t *s) {
   prefs.begin(NVS_NS, false);
   prefs.clear();
   prefs.end();
+
+  // Xóa cấu hình bơm
+  prefs.begin(NVS_NS_PUMP, false);
+  prefs.clear();
+  prefs.end();
+
   // Dùng g_maxFramesize (trần bộ nhớ thật, do setup() truyền vào lúc boot),
   // KHÔNG gọi aquaPrefsApplyDefaults(s) thiếu tham số - tham số mặc định của
   // nó là FRAMESIZE_UXGA, mù bộ nhớ thật, sẽ tái diễn đúng lỗi đã sửa ở trên.
   aquaPrefsApplyDefaults(s, g_maxFramesize);
+
+  // Reset timing bơm về mặc định
+  aquaPumpResetTiming();
 }
 
 framesize_t aquaPrefsMaxFramesize() { return g_maxFramesize; }
@@ -127,4 +152,25 @@ bool aquaPrefsIsSaved() {
   bool saved = prefs.getBool("saved", false);
   prefs.end();
   return saved;
+}
+
+bool aquaPumpPrefsLoad() {
+  prefs.begin(NVS_NS_PUMP, true);  // read-only
+  bool saved = prefs.getBool("saved", false);
+  if (!saved) {
+    prefs.end();
+    return false;
+  }
+
+  PumpTiming *pt = aquaPumpTiming();
+  pt->fillMs     = prefs.getULong("fillMs",     pt->fillMs);
+  pt->settleMs   = prefs.getULong("settleMs",   pt->settleMs);
+  pt->flushMs    = prefs.getULong("flushMs",    pt->flushMs);
+  pt->cooldownMs = prefs.getULong("cooldownMs", pt->cooldownMs);
+  pt->rampUpMs   = prefs.getULong("rampUpMs",   pt->rampUpMs);
+  pt->rampDownMs = prefs.getULong("rampDownMs", pt->rampDownMs);
+  pt->fillDuty   = prefs.getUChar("fillDuty",   pt->fillDuty);
+  pt->flushDuty  = prefs.getUChar("flushDuty",  pt->flushDuty);
+  prefs.end();
+  return true;
 }

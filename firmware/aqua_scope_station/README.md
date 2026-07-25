@@ -24,9 +24,63 @@ truy xuất nguồn gốc. Firmware **không** đếm hạt, không lưu trữ, 
 | `GET /capture` | Một ảnh JPEG. Chụp lỗi → **503** kèm lý do |
 | `GET /device` | JSON danh tính + thiết lập camera (khối audit) |
 | `GET /status` | JSON cấu hình cho slider (bản gốc Espressif) |
-| `GET /control?var=save&val=1` | Ghi cứng cấu hình vào flash |
-| `GET /control?var=reset&val=1` | Xóa cấu hình, về mặc định backlit |
+| `GET /control?var=save&val=1` | Ghi cứng cấu hình camera + bơm vào flash |
+| `GET /control?var=reset&val=1` | Xóa cấu hình, về mặc định backlit + reset pump |
 | `GET /control?var=device_id&val=<tên>` | Đổi device_id (khớp `[A-Za-z0-9._-]`, 1–64 ký tự) |
+| `GET /control?var=pump_auto&val=1` | Bật chu trình Stop-Flow tự động |
+| `GET /control?var=pump_auto&val=0` | Tắt chu trình (ramp bơm xuống 0) |
+| `GET /control?var=pump_fill_ms&val=5000` | Thời gian pha FILLING (ms) |
+| `GET /control?var=pump_settle_ms&val=2000` | Thời gian pha SETTLING (ms) |
+| `GET /control?var=pump_flush_ms&val=5000` | Thời gian pha FLUSHING (ms) |
+| `GET /control?var=pump_cooldown_ms&val=3000` | Thời gian pha COOLDOWN (ms) |
+| `GET /control?var=pump_fill_duty&val=55` | Duty % pha FILL (0–100) |
+| `GET /control?var=pump_flush_duty&val=100` | Duty % pha FLUSH (0–100) |
+| `GET /control?var=pump_ramp_up_ms&val=250` | Thời gian ramp lên (ms) |
+| `GET /control?var=pump_ramp_down_ms&val=350` | Thời gian ramp xuống (ms) |
+
+## Đấu nối bơm L298N
+
+```
+ESP32-CAM GPIO13 ──→ L298N ENA (PWM 20kHz/10-bit)
+L298N IN1         ──→ 3.3V (cố định)
+L298N IN2         ──→ GND  (cố định, một chiều)
+L298N +12V        ──→ Adapter 12V/2A riêng
+L298N GND         ──→ GND chung với ESP32-CAM
+L298N OUT1/OUT2   ──→ Bơm RS365 12V
+Tụ gốm 0.1µF hàn ngang 2 cực bơm (chống nhiễu chổi than)
+```
+
+> **An toàn:** `autoRunning` mặc định **TẮT** lúc cấp điện — phải bật tay qua
+> `?var=pump_auto&val=1` (HTTP) hoặc `a` (Serial).
+>
+> GPIO13 được ép LOW ở **dòng đầu tiên của `setup()`**, trước cả `Serial.begin()`.
+> Ép muộn hơn là để hở một cửa sổ dài: giữa lúc cấp điện và lúc gắn PWM còn có
+> camera init + WiFi connect (timeout tới 20s) và cả nhánh restart khi camera
+> lỗi — thừa thời gian để một chân ENA thả nổi (L298N đọc là HIGH) làm tràn khay.
+>
+> Nếu `ledcAttach` thất bại, firmware **báo lỗi ra Serial và `/device` trả
+> `pump.pwm_ready: false`** thay vì im lặng nhận lệnh mà bơm không nhúc nhích.
+
+## Serial commands (bơm)
+
+Gõ trong Serial Monitor 115200, mỗi lệnh 1 ký tự:
+
+| Lệnh | Ý nghĩa |
+|---|---|
+| `p` | In trạng thái bơm |
+| `0` | Manual OFF (ramp xuống 0, tắt auto) |
+| `1` | Manual ON (ramp lên fillDuty, tắt auto) |
+| `a` | Bật auto Stop-Flow từ FILLING |
+| `f<ms>` | Đặt fill time, vd `f3000` |
+| `s<ms>` | Đặt settle time, vd `s1500` |
+| `x<ms>` | Đặt flush time, vd `x8000` |
+| `c<ms>` | Đặt cooldown time, vd `c5000` |
+| `u<ms>` | Ramp UP time, vd `u250` |
+| `w<ms>` | Ramp DOWN time, vd `w350` |
+| `d<0-100>` | CRUISE duty pha FILL, vd `d45` |
+| `X<0-100>` | Duty pha FLUSH, vd `X100` |
+| `r` | Reset timing về mặc định |
+| `?` | In menu lệnh |
 
 ## Nạp firmware
 
@@ -48,36 +102,38 @@ rút IO0, reset. Mở Serial Monitor 115200 để lấy IP và `device_id`.
    chụp. Rig này chiếu sáng **từ dưới** — thêm đèn từ trên làm nhạt bóng hạt
    và tạo phản xạ trên mặt nước.
 3. **Mặc định UXGA 1600×1200** — hạt <2mm cần độ phân giải.
-4. **Lưu cấu hình vào flash** — `?var=save` / `?var=reset`.
-5. **`/device`** — device_id sinh từ MAC + thiết lập camera đang áp dụng.
-6. **Chạy dài không chết** — tự nối lại WiFi, watchdog, chụp lỗi trả 503 rõ
-   ràng thay vì treo. `loop()` chỉ in trạng thái WiFi mỗi ~10s, chia thành 10
-   lát nghỉ 1 giây (không phải một cục `delay(10000)`): core esp32 3.x đã tự
-   bật sẵn Task Watchdog 5 giây lúc boot, nên một cục `delay(10000)` sẽ làm
-   board panic-reset giữa chừng mỗi lần — trông như biên dịch sạch nhưng thực
-   chạy là boot loop vô tận. Nghỉ theo lát 1 giây, reset watchdog mỗi lát, thì
-   không bao giờ để quá 1 giây trôi qua giữa hai lần reset watchdog, bất kể
-   timeout thực tế là 5s (nếu cấu hình lại watchdog ở `setup()` thất bại) hay
-   30s (khi thành công).
+4. **Lưu cấu hình vào flash** — `?var=save` / `?var=reset` (lưu cả camera lẫn bơm).
+5. **`/device`** — device_id sinh từ MAC + thiết lập camera + trạng thái bơm.
+6. **Chạy dài không chết** — tự nối lại WiFi, watchdog, chụp lỗi trả 503.
+   `loop()` nghỉ 50ms mỗi vòng (thay vì 10×1s) để pump tick phản hồi kịp thời.
+7. **Điều khiển bơm L298N** — state machine Stop-Flow (FILLING/SETTLING/FLUSHING/
+   COOLDOWN) với PWM ramp chống búa nước, điều khiển qua HTTP và Serial.
 
 ## Checklist nghiệm thu trên board thật
 
-Chưa chạy đủ 7 mục này thì **chưa được nói firmware "chạy được"**.
+Chưa chạy đủ các mục này thì **chưa được nói firmware "chạy được"**.
 
 - [ ] 1. Nạp xong, Serial 115200 in ra IP và `device_id = aqua-cam-xxxxxx`
-- [ ] 2. `curl http://<ip>/device` → JSON hợp lệ, `psram: true`
+- [ ] 2. `curl http://<ip>/device` → JSON hợp lệ, `psram: true`, có object `pump`
 - [ ] 3. Mở `http://<ip>/` chỉnh slider → nền xám đều, hạt là bóng đen rõ
 - [ ] 4. `?var=save` → rút điện → cắm lại → `/device` báo `prefs_saved: true`
-      và đúng thông số vừa chỉnh
+      và đúng thông số camera + bơm vừa chỉnh
 - [ ] 5. Tắt router 30 giây rồi bật lại → board tự nối lại, `/device` phản hồi,
       **không** cần bấm reset
 - [ ] 6. `python -m ml.infer --from-board <ip> --count 3 --dry-run` → 3 khung,
       không có dòng nào ghi vào DB
 - [ ] 7. Bỏ `--dry-run` → 3 mẫu hiện trên dashboard, cột device_id đúng tên board
+- [ ] 8. Serial in `[pump] init OK`, `/device` báo `pump.pwm_ready: true`
+- [ ] 9. Cấp điện, **chưa gõ lệnh nào** → bơm đứng im hoàn toàn (kể cả trong
+      lúc board đang dò WiFi). Đây là mục kiểm tra chân ENA không thả nổi.
+- [ ] 10. Serial gõ `a` → bơm chạy chu trình, `p` → in đúng trạng thái pha
+- [ ] 11. `?var=pump_auto&val=1` → bơm bắt đầu, `/device` báo `pump.auto: true`
+- [ ] 12. `?var=pump_fill_duty&val=150` → trả **HTTP 500** (không phải 200)
+- [ ] 13. `?var=save` → rút điện → cắm lại → `/device` báo đúng timing bơm đã lưu
 
 ## Chưa có (cố ý)
 
-Điều khiển đèn nền (đèn cắm thẳng, luôn sáng), điều khiển bơm, suy luận
-on-device. State machine bơm nằm riêng ở `firmware/pump_stopflow_test/`; khi
-gộp vào đây thì chỗ đặt là `loop()`, và relay dùng **GPIO13** (active-LOW —
-phải kéo HIGH ở dòng đầu `setup()` để bơm không tự chạy lúc boot).
+Điều khiển đèn nền (đèn cắm thẳng, luôn sáng), suy luận on-device, tự động
+chụp ảnh theo pha SETTLING (script PC chủ động pull `/capture`, trường
+`pump.phase` trong `/device` là thông tin để script tự biết lúc nào là SETTLING
+nếu sau này muốn tự động hoá — nằm ngoài phạm vi firmware).

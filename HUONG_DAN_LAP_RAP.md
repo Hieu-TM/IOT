@@ -2,14 +2,20 @@
 
 > Tutorial thực thi: từ các chi tiết đã in/đã mua → lắp thành trạm hoàn chỉnh → nạp firmware →
 > canh sáng → chạy thử chu trình Stop-Flow. Bám sát kiến trúc **lắp-từ-đáy** (`plan.md` §2, §8),
-> quyết định điện **module relay** ([[pump-drive-decision]]) và firmware OV3660 (`firmware/`).
+> quyết định điện **module L298N** ([[pump-drive-decision]]) và firmware OV3660 (`firmware/`).
 >
-> ⚠️ **Đọc trước — 2 vấn đề mở phải biết:**
-> 1. **Lấy nét:** test 2026-07-08 cho thấy lens OV3660 của unit thực **KHÔNG nét ở 40mm** — chỉ nét mờ ~1cm
->    ([[camera-focus-limit]]). Hướng dẫn này dựng đúng cơ khí baseline, nhưng **bước 6 (canh nét) có thể thất bại**;
->    xem §9 để xử lý (macro clip-on / đổi cự ly / đổi module AF).
-> 2. **Điều khiển bơm:** firmware hiện tại **chưa** có mã bật/tắt bơm (mục duty-cycle mới là prototype trong
->    `firmware/.../README.md`). Ở bản demo này bơm được điều khiển **thủ công / mạch relay rời**; §7 nêu cách đấu sẵn sàng cho bước tự động hoá sau.
+> ⚠️ **Đọc trước — vấn đề mở phải biết:**
+> - **Lấy nét:** test 2026-07-08 cho thấy lens OV3660 của unit thực **KHÔNG nét ở 40mm** — chỉ nét mờ ~1cm
+>   ([[camera-focus-limit]]). Hướng dẫn này dựng đúng cơ khí baseline, nhưng **bước 6 (canh nét) có thể thất bại**;
+>   xem §9 để xử lý (macro clip-on / đổi cự ly / đổi module AF).
+>
+> ✅ **Điều khiển bơm — đã gộp vào firmware trạm:** `firmware/aqua_scope_station/` chạy đủ chu trình
+> Stop-Flow (FILLING → SETTLING → FLUSHING → COOLDOWN) với soft-start/soft-stop, chỉnh được qua Serial
+> **hoặc** HTTP (`/control?var=pump_*`). Chỉ còn **một** firmware, nạp lên chính board ESP32-CAM.
+> Firmware test riêng cũ (`firmware/pump_l298n_xiao/`, chạy trên XIAO ESP32-S3 rời) đã bị xoá sau khi gộp.
+>
+> ⚠️ Chu trình auto **mặc định TẮT** lúc cấp điện (an toàn khi đang lắp/kiểm tra). Bật bằng
+> `curl "http://<ip>/control?var=pump_auto&val=1"` hoặc gõ `a` qua Serial.
 
 ---
 
@@ -25,8 +31,9 @@
 | `print_led_shelf.stl` | Vách đỡ module LED **rời** | Lỗ module +0.4mm dung sai |
 | `print_slot_plugs.stl` | 2 nút bịt **khe dọc** (chống lọt sáng) | In khít khe VÀO 24 / RA 12 |
 | `print_prescreen.stl` | Lưới lọc thô khe >5mm ở cổng vào | Khe >5mm để hạt 1–5mm lọt |
-| `print_pump_station.stl` | Đế liền + hộp che board L298N (hở nắp) + 2 yên kẹp ôm bơm RS365 | PETG (cần dẻo cho khe lồng yên kẹp); in phẳng, không support |
+| `print_pump_station.stl` | Đế liền + hộp che board L298N (hở nắp) + 2 yên kẹp ôm bơm RS365 + **kênh giấu dây** chạy suốt trong đế | PETG (cần dẻo cho khe lồng yên kẹp); in phẳng, không support |
 | `print_pump_station_lid.stl` | Nắp hộp L298N (tháo được, 2 vít M3 tự-ren) | In phẳng |
+| `print_pump_station_channel_cover.stl` | **2 thanh nắp đậy kênh giấu dây** (đoạn hộp↔yên gần, yên gần↔yên xa) — in chung 1 lần | In phẳng, PETG; ép vào gờ ray, **không vít** |
 
 > **Cài đặt in gợi ý:** layer 0.2mm, infill ≥30%, vật liệu PETG (kháng nước tốt hơn PLA). Vỏ housing là chi
 > tiết cao nhất (~108mm) — kiểm giường in đủ cao.
@@ -45,15 +52,23 @@
 
 ### C. Điện (BOM tối thiểu chạy được — [[pump-drive-decision]])
 
-- **Module relay 1 kênh có opto** (cách ly quang) — mặc định điều khiển bơm (đấu qua tiếp điểm **NO**).
+- **Module L298N** (cầu H) — driver bơm CHỐT ([[pump-drive-decision]]). Điều khiển bằng PWM vào chân **ENA**
+  (phải **tháo jumper ENA** trên board), chiều quay cố định bằng IN1/IN2.
 - **Adapter 12V/2A** (dư cho inrush RS365 vọt 2–3A lúc khởi động).
-- **Jack DC cái → terminal vặn vít** (rẽ nguồn không cần hàn).
+- **Jack DC cái → terminal vặn vít** (rẽ nguồn không cần hàn). *Nằm NGOÀI hộp in — không có lỗ panel-mount
+  trên hộp L298N; đây là lựa chọn có chủ đích, xem spec `2026-07-25-pump-station-wire-shroud-design.md`.*
 - **Tụ gốm 0.1µF** hàn ngang 2 cực bơm (BẮT BUỘC — dập nhiễu chổi than để ảnh sạch).
 - (Khuyến nghị) **Tụ bulk 470–1000µF** trên rail 12V (bù inrush, chống sụt áp → chống brownout ESP32).
-- Cáp USB-C (nạp + nuôi ESP32 5V riêng), dây nối, **chung GND bắt buộc**.
+- Dây jumper đực-cái (không cần hàn — kênh giấu dây và các khe đã nới đủ rộng cho đầu nhựa dupont).
+- Cáp USB-C (nạp + nuôi ESP32 5V riêng), **chung GND bắt buộc**.
 
-> **Chỉ cần PWM chỉnh lưu lượng** mới đổi sang MOSFET **IRLZ44N** (logic-level) + **diode flyback 1N4007** +
-> gate 220Ω + kéo xuống 10k. Demo bật/tắt thì relay là đủ và an toàn hơn.
+> **Vì sao L298N chứ không phải relay/MOSFET:** relay chỉ bật/tắt, không chỉnh được lưu lượng — mà chu trình
+> Stop-Flow cần **soft-start/soft-stop** để chống búa nước và sóng mặt nước (xem
+> `docs/research/2026-07-23-khay-lang-song-nghien-cuu-hop-nhat.md`). Bản MOSFET IRLZ44N cũ vẫn hợp lệ về điện
+> nhưng **hộp in hiện tại làm theo kích thước board L298N** — dùng MOSFET thì phải tự làm giá đỡ khác.
+>
+> ⚠️ **L298N sụt áp ~1.8–2.5V** qua transistor nội → bơm chỉ nhận ~9.5–10V. Nếu bơm yếu: tăng `fillDuty`
+> hoặc dùng adapter 14–15V.
 
 ---
 
@@ -135,39 +150,62 @@
 
 ## 7. Đấu điện & trạm bơm (tách rời chống rung)
 
-Sơ đồ nguồn (chung GND bắt buộc):
+Sơ đồ đấu dây đầy đủ (chung GND **bắt buộc**) — khớp với
+`firmware/aqua_scope_station/aqua_pump.cpp`:
 
 ```
-   Adapter 12V/2A ──► Jack DC→terminal ──┬──► [+] Bơm RS365 [−] ──► relay NO ──► GND
-                                          └──► (khuyến nghị) tụ bulk 470–1000µF ‖ rail 12V
-   ESP32-S3  ── USB-C 5V (nguồn riêng) ── GPIO điều khiển ──► IN của relay
-   GND adapter ═══════ chung ═══════ GND ESP32     (BẮT BUỘC)
-   Tụ gốm 0.1µF ── hàn NGAY 2 cực motor bơm (sát motor nhất có thể)
+   ESP32-CAM AI-Thinker         Module L298N              Bơm RS365 12V
+   ────────────────────         ─────────────             ──────────────
+   GPIO13        ─────PWM────► ENA  (THÁO jumper!)
+   3.3V          ────────────► IN1  (giữ mức HIGH)
+   GND           ────────────► IN2  (giữ mức LOW)  → chiều quay cố định
+                                OUT1 ──────────────────► cực (+) bơm
+                                OUT2 ──────────────────► cực (−) bơm
+   Adapter 12V/2A (+) ────────► +12V
+   Adapter 12V/2A (−) ────────► GND
+   GND ESP32-CAM ═══ CHUNG GND ═══════ GND L298N ═══════ GND adapter
+
+   Tụ gốm 0.1µF     ── hàn NGAY 2 cực motor bơm (sát motor nhất có thể)
+   Tụ bulk 470–1000µF ── trên rail 12V (gánh dòng khởi động đỉnh ~2A)
 ```
 
-> ⚠️ **Hai lựa chọn driver — CHỌN MỘT, đừng lắp lẫn cả hai:** sơ đồ nguồn và các bước 1–2 ngay dưới đây
-> mô tả phương án **relay** (đóng/mở tiếp điểm NO) — vẫn là một cách lắp hợp lệ. Bước 5 (gá board vào
-> `print_pump_station.stl`) lại nói tới **L298N** — một module driver khác hẳn (cầu H, chân IN1/IN2/ENA),
-> không phải relay. Tài liệu này **chưa có** sơ đồ đấu GPIO → IN1/IN2/ENA cho L298N (đây là lỗ hổng đã biết,
-> cần bổ sung riêng, không phải hai driver dùng chung được). Nếu build theo relay: bỏ qua phần L298N ở bước 5.
-> Nếu build theo L298N: bỏ qua sơ đồ nguồn + bước 1–2 + ghi chú "bật/tắt relay bằng tay" ở cuối mục 7, và tự
-> tra datasheet L298N để đấu ENA/IN1/IN2 trước khi cấp điện.
+> ⚠️ **THÁO JUMPER ENA.** Board L298N xuất xưởng có jumper nhựa nối ENA lên 5V (= bơm luôn chạy full tốc).
+> Không rút ra thì PWM vô tác dụng. Rút xong, cắm dây PWM vào trụ phía **gần IN1/IN2**; trụ còn lại bỏ trống.
+>
+> ⚠️ **Thiếu chung GND = L298N không nhận lệnh** (tín hiệu PWM không có đường về).
+>
+> ⚠️ **Bơm chạy ngược nước?** Đảo 2 dây OUT1/OUT2, hoặc đổi IN1↔IN2.
+>
+> Chọn GPIO13 vì camera AI-Thinker đã chiếm GPIO 0, 5, 18, 19, 21, 22, 23, 25, 26, 27, 32, 34–36, 39 (và
+> GPIO4 là đèn flash). GPIO13 chỉ trùng HS2_DATA3 của khe thẻ SD — firmware này không dùng khe SD nên rảnh,
+> lại không phải chân strapping nên an toàn lúc boot.
 
-Đấu dây:
-1. Bơm qua tiếp điểm **NO** của relay (mặc định TẮT khi chưa cấp tín hiệu).
-2. Coil relay ăn **5V**, IN nối 1 GPIO trống của XIAO. Nhiều relay **active-low** → trong `setup()` phải **set GPIO
-   về mức TẮT ngay** trước khi cấu hình, tránh bơm tự chạy lúc boot (GPIO thả nổi).
-3. Hàn **tụ 0.1µF** ngang 2 cực bơm (chống nhiễu chổi than — nếu không ảnh sẽ nhiễu và ESP32 dễ treo).
-4. Đặt bơm **tách rời** khối quang (cách ly rung). Nối ống theo chuỗi ở §8.
-5. **Gá bơm + board vào trạm gọn (`print_pump_station.stl`):** lồng board L298N vào
-   hộp (tựa lên 4 gờ góc, không cần khớp lỗ vít), bắt nắp `print_pump_station_lid.stl`
-   bằng 2 vít M3 tự-ren. Ép thân trụ động cơ RS365 từ TRÊN xuống vào 2 yên kẹp (khe
-   hẹp hơn Ø lỗ — PETG hơi dẻo, ép nhẹ tay); nếu lỏng, luồn zip-tie qua rãnh trên
-   đỉnh yên xiết thêm. Dây 12V vào / dây ra động cơ / dây logic đi qua 3 khe ở 3
-   cạnh hộp, chạy trong rãnh nông trên mặt đế tới yên kẹp — không để dây lòng thòng.
-   ⚠️ Kích thước board L298N (43×43×27mm) và Ø thân bơm (31.5mm) trong model là
-   ƯỚC TÍNH — nếu hàng thật lệch nhiều, sửa `l298n_l/w/h` và `pump_motor_od` trong
-   `openscad/constants.scad` rồi in lại (không cần sửa gì khác).
+**Trình tự gá vào trạm bơm (`print_pump_station.stl`) — đi dây TRƯỚC, đậy nắp SAU:**
+
+1. Đặt bơm **tách rời** khối quang (cách ly rung). Nối ống theo chuỗi ở §8.
+2. Hàn **tụ 0.1µF** ngang 2 cực bơm (chống nhiễu chổi than — nếu không, ảnh sẽ nhiễu và ESP32 dễ treo).
+3. **Lồng board L298N** vào hộp — board tựa lên 4 gờ góc, *không* cần khớp lỗ vít. Khoang cố ý rộng bất đối
+   xứng (8mm hai cạnh có domino vít, 4mm hai cạnh còn lại) để đủ chỗ bẻ dây quanh domino.
+4. **Ép thân trụ động cơ RS365 từ TRÊN xuống** vào 2 yên kẹp (khe hẹp hơn Ø lỗ — PETG hơi dẻo, ép nhẹ tay).
+   Trước khi ép hẳn, **xoay bơm sao cho 2 chân điện hướng xuống khe nhỏ ở đáy máng kẹp** (hoặc hướng lên khe
+   lồng trên đỉnh — cả hai lối đều thông xuống kênh dây). Lòng máng hình trụ nên bơm xoay tự do: **ngạnh ống
+   hướng nào cũng lắp được**, không bị chốt cứng một chiều. Nếu lỏng, luồn zip-tie qua rãnh trên đỉnh yên.
+5. **Luồn dây động cơ:** từ domino OUT của L298N chui qua khe mức sàn ở cạnh +X của hộp → nằm thẳng vào
+   **kênh giấu dây** trong đế → chạy suốt dưới 2 yên kẹp → trồi lên qua khe đáy máng tới chân bơm. Khe OUT
+   đặt ngang mặt sàn (không phải ở miệng hộp) để dây đi thẳng, **không phải vòng lên rồi xuống lại** —
+   đây chính là nguyên nhân "không tính đủ độ dài dây" ở bản in v1.
+6. **Luồn bó dây logic** (ENA/IN1/IN2/GND) qua khe rộng ở cạnh +Y hộp, **vòng qua trụ neo** ngay bên ngoài
+   khe một vòng rồi mới đi tự do lên ESP32. Trụ neo chịu lực kéo thay cho chân cắm trên board.
+   Bọc đoạn dây hở giữa 2 cụm bằng **ống gen xoắn (spiral wrap)** — biến 4 dây rời thành 1 bó gọn.
+7. **Đậy nắp:** ép 2 thanh `print_pump_station_channel_cover.stl` vào gờ ray của kênh dây (ép chặt bằng đàn
+   hồi PETG, không vít), rồi bắt `print_pump_station_lid.stl` bằng 2 vít M3 tự-ren. Xong: nhìn từ trên xuống
+   không còn thấy dây nào ngoài bó gen xoắn đi lên ESP32.
+
+> ⚠️ Kích thước board L298N (43×43×27mm) và Ø thân bơm (31.5mm) trong model là **ƯỚC TÍNH, CHƯA ĐO hàng
+> thật** — nếu lệch nhiều, sửa `l298n_l/w/h` và `pump_motor_od` trong `openscad/constants.scad` rồi in lại
+> (không cần sửa gì khác; mọi kích thước hộp/yên/đế đều dẫn xuất từ các hằng số này).
+>
+> Nắp kênh dây quá lỏng hoặc quá chặt: chỉnh `wire_cover_fit_interference` trong `constants.scad`.
 
 Đường ống (chuỗi nối tiếp, bơm **hút** từ đầu ra):
 
@@ -175,9 +213,16 @@ Sơ đồ nguồn (chung GND bắt buộc):
    Nguồn mẫu ─(qua prescreen >5mm)→ Khe VÀO khay ─… khay …─ Cổng RA sát đáy → Bơm RS365 → Thải
 ```
 
-> **Điều khiển tự động (bước sau):** firmware hiện chưa bật/tắt bơm. Khi triển khai máy trạng thái Stop-Flow
-> (prototype trong `firmware/.../README.md`), thêm `pinMode(PUMP,OUTPUT); digitalWrite(PUMP,TẮT);` đầu `setup()`
-> và điều khiển theo pha FILLING/SETTLING/DRAINING. Trước đó có thể bật/tắt relay bằng tay để thử cơ khí.
+> **Chạy thử bơm:** nạp `firmware/aqua_scope_station/` (board *AI Thinker ESP32-CAM*, Arduino-ESP32
+> core **3.x** — core 2.x không biên dịch được vì dùng API `ledcAttach`). Mở Serial 115200, gõ `?` xem menu.
+> Chu trình **không** tự chạy lúc khởi động (an toàn khi đang lắp): gõ `a` để bắt đầu, `0` để dừng khẩn.
+> Từ xa thì dùng `curl "http://<ip>/control?var=pump_auto&val=1"` / `&val=0`.
+>
+> **Dò `fillDuty`:** chạy `a`, nhìn mặt nước lúc FILLING. Còn nghe "ục ục" hoặc thấy xoáy phễu ở miệng xả →
+> hạ `d` xuống 5% rồi thử lại. Lấy mức **thấp nhất** mà vẫn đẩy đủ nước trong `fillMs`.
+>
+> **Bước sau (chưa làm):** để pha SETTLING tự kích chụp ảnh. Hiện firmware chỉ *lộ* pha hiện tại trong
+> `GET /device` (`pump.phase`) — script trên PC phải tự đọc trường đó rồi gọi `/capture` đúng lúc.
 
 ---
 
@@ -230,7 +275,8 @@ Bối cảnh QC nước đầu vào nhà máy thực phẩm ([[application-conte
 - [ ] Màng khuếch tán → module LED vào vách rời → 2 vít M3 ngang ±Y (§5)
 - [ ] Prescreen ở cổng vào
 - [ ] Nạp firmware → canh phơi sáng → LƯU CỨNG (§6)
-- [ ] Đấu relay + tụ 0.1µF + chung GND + nguồn 12V/2A (§7)
+- [ ] Đấu L298N (THÁO jumper ENA) + tụ 0.1µF + chung GND + nguồn 12V/2A (§7)
+- [ ] Luồn dây vào kênh giấu dây → ép 2 nắp kênh → bắt nắp hộp L298N (§7)
 - [ ] Nối ống: nguồn→khay→bơm→thải (§7–§8)
 - [ ] Kiểm kín / giữ mực / thả 20 hạt đếm sót / kiểm nét (§8)
 ```

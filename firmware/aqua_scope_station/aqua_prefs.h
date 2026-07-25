@@ -1,5 +1,5 @@
 /*
- * aqua_prefs — lưu/nạp cấu hình camera vào flash (NVS).
+ * aqua_prefs — lưu/nạp cấu hình camera VÀ bơm vào flash (NVS).
  *
  * Vì sao cần: canh sáng backlit (exposure/gain) mất vài phút mỗi lần. Không có
  * lớp này thì mỗi lần mất điện là phải canh lại từ đầu. Có nó thì chỉnh 1 lần,
@@ -13,6 +13,7 @@
 #define AQUA_PREFS_H
 
 #include "esp_camera.h"
+#include "aqua_pump.h"
 
 // Áp bộ mặc định backlit silhouette lên sensor: TẮT AEC/AEC-DSP/AGC, gain 0,
 // exposure thấp. Gọi ngay sau esp_camera_init(), TRƯỚC aquaPrefsLoad().
@@ -36,10 +37,11 @@ void aquaPrefsApplyDefaults(sensor_t *s, framesize_t max_framesize = FRAMESIZE_U
 // mù quáng mỗi lần khởi động.
 bool aquaPrefsLoad(sensor_t *s, framesize_t max_framesize = FRAMESIZE_UXGA);
 
-// Ghi cứng trạng thái sensor hiện tại vào flash.
+// Ghi cứng trạng thái sensor hiện tại VÀ cấu hình bơm vào flash.
+// Một nút lưu cho cả hệ thống.
 void aquaPrefsSave(sensor_t *s);
 
-// Xóa cấu hình đã lưu + áp lại mặc định backlit.
+// Xóa cấu hình đã lưu + áp lại mặc định backlit + reset timing bơm.
 void aquaPrefsReset(sensor_t *s);
 
 // Flash đã có cấu hình lưu hay chưa (không áp gì lên sensor).
@@ -55,5 +57,9 @@ bool aquaPrefsIsSaved();
 // ghi nó vào NVS, để lần khởi động sau aquaPrefsLoad() lại lặng lẽ kẹp về
 // SVGA. Cấu hình tự mâu thuẫn với chính nó, không ai thấy lỗi ở đâu.
 framesize_t aquaPrefsMaxFramesize();
+
+// Nạp cấu hình bơm đã lưu (nếu có) vào PumpTiming.
+// Trả về true nếu flash có cấu hình bơm, false nếu chưa lưu lần nào.
+bool aquaPumpPrefsLoad();
 
 #endif  // AQUA_PREFS_H

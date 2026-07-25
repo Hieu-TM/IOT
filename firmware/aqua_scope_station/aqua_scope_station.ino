@@ -1,6 +1,6 @@
 /*
  * ============================================================================
- *  Aqua Scope — Firmware thu thập dataset (ESP32-CAM AI-Thinker, OV2640)
+ *  Aqua Scope — Firmware thu thập dataset + điều khiển bơm (ESP32-CAM AI-Thinker, OV2640)
  * ============================================================================
  *  Nhiệm vụ: làm "nguồn ảnh câm" cho laptop kéo về.
  *    - GET /         web UI gốc của Espressif (canh sáng bằng slider)
@@ -35,6 +35,7 @@
 
 #include "aqua_device.h"
 #include "aqua_prefs.h"
+#include "aqua_pump.h"
 #include "board_config.h"
 
 // ---------------------------------------------------------------------------
@@ -182,9 +183,16 @@ static bool connectWiFi() {
 }
 
 void setup() {
+  // VIỆC ĐẦU TIÊN, trước cả Serial: ghim chân bơm xuống LOW.
+  // Chân ENA thả nổi có thể được L298N đọc là HIGH → bơm chạy hết tốc. Mọi thứ
+  // bên dưới (camera init, WiFi connect tới 20s, và cả nhánh restart khi camera
+  // lỗi) đều đủ lâu để làm tràn khay nếu chân còn thả nổi. Phần gắn PWM nằm ở
+  // aquaPumpInit() cuối setup() — xem aqua_pump.h, mục "khởi tạo hai giai đoạn".
+  aquaPumpPreInit();
+
   Serial.begin(115200);
   Serial.setDebugOutput(true);
-  Serial.println("\n=== Aqua Scope — firmware thu thập dataset ===");
+  Serial.println("\n=== Aqua Scope — firmware thu thập dataset + điều khiển bơm ===");
 
 #if !AQUA_HAS_WIFI_CONFIG
   Serial.println("[CẢNH BÁO] Không tìm thấy wifi_config.h — đang chạy chế độ AP mặc định.");
@@ -247,11 +255,25 @@ void setup() {
 
   aquaDeviceInit();  // sau WiFi: MAC chỉ đọc được khi WiFi stack đã chạy
 
+  // --- Khởi động bơm ---
+  // TRƯỚC startCameraServer(): /control?var=pump_* phải có bơm sẵn sàng ngay
+  // từ request đầu tiên, chứ không phải mở cổng ra rồi mới gắn PWM.
+  // SAU esp_camera_init(): xem ghi chú kênh LEDC ở đầu aqua_pump.cpp — camera
+  // giành LEDC qua ESP-IDF mà Arduino không thấy, nên thứ tự này có ý nghĩa.
+  aquaPumpInit();
+  if (aquaPumpPrefsLoad()) {
+    Serial.println("Đã nạp cấu hình bơm từ flash.");
+  } else {
+    Serial.println("Flash chưa có cấu hình bơm — dùng mặc định.");
+  }
+  aquaPumpPrintHelp();
+  Serial.println();
+
   startCameraServer();
 
   IPAddress ip = USE_AP ? WiFi.softAPIP() : WiFi.localIP();
   Serial.printf("\nSẵn sàng. Web UI:  http://%s/\n", ip.toString().c_str());
-  Serial.printf("Thu dataset:       python collect_dataset.py --host %s\n\n",
+  Serial.printf("Thu dataset:       python collect_dataset.py --host %s\n",
                 ip.toString().c_str());
 
   // Watchdog 30s cho task loop: nếu loop treo, board tự reset thay vì đứng câm.
@@ -300,27 +322,44 @@ void setup() {
 void loop() {
   esp_task_wdt_reset();  // báo watchdog rằng loop còn sống
 
-  // Server chạy ở task riêng của esp_http_server; loop chỉ báo trạng thái để
-  // soi khi /capture bị timeout giữa phiên đo dài.
-  if (!USE_AP) {
-    if (WiFi.status() == WL_CONNECTED) {
-      Serial.printf("[WiFi] OK | IP=%s | RSSI=%d dBm | chụp=%lu\n",
-                    WiFi.localIP().toString().c_str(), WiFi.RSSI(),
-                    (unsigned long)aquaDeviceCaptureCount());
-    } else {
-      Serial.printf("[WiFi] mất kết nối (status=%d) — đang thử nối lại\n",
-                    WiFi.status());
+  // Xử lý lệnh Serial (pump + status)
+  if (Serial.available()) {
+    String line = Serial.readStringUntil('\n');
+    line.trim();
+    if (line.length() > 0) {
+      // Thử lệnh pump trước; nếu không phải lệnh pump thì báo lỗi.
+      if (!aquaPumpHandleSerial(line)) {
+        Serial.println("Lenh khong hop le. Go '?' de xem menu bom.");
+      }
     }
   }
-  // Nghỉ 10s nhưng chia thành 10 lát 1s, mỗi lát reset watchdog một lần —
-  // KHÔNG delay(10000) một cục. Watchdog thực tế có thể là 30s (cấu hình ở
-  // setup()) hoặc 5s (nếu cấu hình thất bại và ta không đăng ký loop vào
-  // watchdog — xem cảnh báo ở setup()); dù là giá trị nào, đợi rời rạc kiểu
-  // này cũng không bao giờ để quá 1s trôi qua giữa hai lần reset, nên không
-  // phụ thuộc vào con số timeout cụ thể. Sau này có ai nâng nhịp báo cáo lên
-  // 60s cũng không vô tình dựng lại boot loop như bản delay(10000) cũ.
-  for (int i = 0; i < 10; i++) {
-    esp_task_wdt_reset();
-    delay(1000);
+
+  // Tick state machine bơm mỗi vòng loop.
+  // Nếu autoRunning=false thì tick không làm gì (nhẹ).
+  aquaPumpTick();
+
+  // Server chạy ở task riêng của esp_http_server; loop chỉ báo trạng thái để
+  // soi khi /capture bị timeout giữa phiên đo dài.
+  // In trạng thái WiFi mỗi ~10s. Đếm thời gian bằng static var thay vì
+  // delay(10000) một cục — loop cần chạy nhanh cho pump tick.
+  static uint32_t lastStatusPrint = 0;
+  uint32_t now = millis();
+  if (now - lastStatusPrint >= 10000) {
+    lastStatusPrint = now;
+    if (!USE_AP) {
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf("[WiFi] OK | IP=%s | RSSI=%d dBm | chup=%lu\n",
+                      WiFi.localIP().toString().c_str(), WiFi.RSSI(),
+                      (unsigned long)aquaDeviceCaptureCount());
+      } else {
+        Serial.printf("[WiFi] mat ket noi (status=%d) — dang thu noi lai\n",
+                      WiFi.status());
+      }
+    }
   }
+
+  // Nghỉ ngắn mỗi vòng để nhường CPU cho các task FreeRTOS khác (httpd, WiFi),
+  // nhưng đủ ngắn để pump tick phản hồi kịp thời (50ms « thời gian pha ngắn
+  // nhất mặc định 2000ms SETTLING). Watchdog 30s/5s không bị chạm.
+  delay(50);
 }

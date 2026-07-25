@@ -25,6 +25,7 @@
 #include "board_config.h"
 #include "aqua_prefs.h"
 #include "aqua_device.h"
+#include "aqua_pump.h"
 #include <WiFi.h>
 
 #if defined(ARDUINO_ARCH_ESP32) && defined(CONFIG_ARDUHAL_ESP_LOG)
@@ -32,7 +33,7 @@
 #endif
 
 // Bản firmware hiện hành — báo trong /device để đối chiếu khi audit.
-#define AQUA_FIRMWARE_VERSION "aqua_scope_station/1.0.0"
+#define AQUA_FIRMWARE_VERSION "aqua_scope_station/1.1.0"
 
 // LED FLASH setup
 #if defined(LED_GPIO_NUM)
@@ -450,7 +451,39 @@ static esp_err_t cmd_handler(httpd_req_t *req) {
     log_i("Đã lưu cấu hình vào flash");
   } else if (!strcmp(variable, "reset")) {
     aquaPrefsReset(s);
-    log_i("Đã xóa cấu hình, về mặc định backlit");
+    log_i("Đã xóa cấu hình, về mặc định backlit + reset pump timing");
+  }
+  // --- Điều khiển bơm qua HTTP -------------------------------------------------
+  // Cùng dạng /control?var=pump_xxx&val=yyy. val là số nguyên.
+  //
+  // HAI QUY TẮC, cả hai đều đã từng bị vi phạm ở bản trước:
+  //
+  // 1) Giá trị ngoài miền phải TỪ CHỐI (res = -1 -> HTTP 500), không được im
+  //    lặng bỏ qua rồi trả 200. Trả 200 cho một lệnh không có hiệu lực đúng là
+  //    kiểu hỏng khó truy nhất — nhánh `framesize` phía trên đã học bài này.
+  //
+  // 2) Handler này chạy ở TASK HTTPD, không phải task loop(). Tuyệt đối không
+  //    gọi hàm nào có ramp/đổi pha (aquaPumpSetAuto...) — chúng blocking 350ms
+  //    và sẽ tranh chấp state machine với aquaPumpTick(). Dùng
+  //    aquaPumpRequestAuto(): nó chỉ ghi cờ, tick sẽ thực thi ở đúng task.
+  else if (!strcmp(variable, "pump_auto")) {
+    aquaPumpRequestAuto(val != 0);
+  } else if (!strcmp(variable, "pump_fill_ms")) {
+    if (val > 0) aquaPumpTiming()->fillMs = val; else res = -1;
+  } else if (!strcmp(variable, "pump_settle_ms")) {
+    if (val > 0) aquaPumpTiming()->settleMs = val; else res = -1;
+  } else if (!strcmp(variable, "pump_flush_ms")) {
+    if (val > 0) aquaPumpTiming()->flushMs = val; else res = -1;
+  } else if (!strcmp(variable, "pump_cooldown_ms")) {
+    if (val > 0) aquaPumpTiming()->cooldownMs = val; else res = -1;
+  } else if (!strcmp(variable, "pump_fill_duty")) {
+    if (val >= 0 && val <= 100) aquaPumpTiming()->fillDuty = (uint8_t)val; else res = -1;
+  } else if (!strcmp(variable, "pump_flush_duty")) {
+    if (val >= 0 && val <= 100) aquaPumpTiming()->flushDuty = (uint8_t)val; else res = -1;
+  } else if (!strcmp(variable, "pump_ramp_up_ms")) {
+    if (val >= 0) aquaPumpTiming()->rampUpMs = val; else res = -1;
+  } else if (!strcmp(variable, "pump_ramp_down_ms")) {
+    if (val >= 0) aquaPumpTiming()->rampDownMs = val; else res = -1;
   }
 #if defined(LED_GPIO_NUM)
   else if (!strcmp(variable, "led_intensity")) {
@@ -537,7 +570,8 @@ static void jsonEscape(const char *src, char *dst, size_t dstSize) {
 // dạng do bản gốc Espressif quy định, không được đổi). /device là khối audit
 // mà ml.infer nhét vào metadata của mẫu.
 static esp_err_t device_handler(httpd_req_t *req) {
-  static char json[640];
+  // Mở rộng buffer từ 640 -> 1024 để chứa thêm object pump.
+  static char json[1024];
   sensor_t *s = esp_camera_sensor_get();
 
   const char *sensorName = "unknown";
@@ -596,6 +630,28 @@ static esp_err_t device_handler(httpd_req_t *req) {
            s ? s->status.aec_value : 0,
            (unsigned long)aquaDeviceCaptureCount(),
            aquaPrefsIsSaved() ? "true" : "false");
+
+  // Thêm pump object vào JSON (nối vào trước '}' cuối).
+  // Tìm '}' cuối cùng và ghi đè từ đó.
+  size_t len = strlen(json);
+  if (len > 0 && json[len - 1] == '}') {
+    PumpTiming *pt = aquaPumpTiming();
+    snprintf(json + len - 1, sizeof(json) - len + 1,
+             ",\"pump\":{\"pwm_ready\":%s,\"auto\":%s,\"phase\":\"%s\",\"duty\":%u,"
+             "\"cycle_count\":%lu,"
+             "\"fill_ms\":%lu,\"settle_ms\":%lu,\"flush_ms\":%lu,\"cooldown_ms\":%lu,"
+             "\"ramp_up_ms\":%lu,\"ramp_down_ms\":%lu,"
+             "\"fill_duty\":%u,\"flush_duty\":%u}}",
+             aquaPumpPwmReady() ? "true" : "false",
+             aquaPumpIsAuto() ? "true" : "false",
+             pumpPhaseName(aquaPumpPhase()),
+             aquaPumpDuty(),
+             (unsigned long)aquaPumpCycleCount(),
+             (unsigned long)pt->fillMs, (unsigned long)pt->settleMs,
+             (unsigned long)pt->flushMs, (unsigned long)pt->cooldownMs,
+             (unsigned long)pt->rampUpMs, (unsigned long)pt->rampDownMs,
+             pt->fillDuty, pt->flushDuty);
+  }
 
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
