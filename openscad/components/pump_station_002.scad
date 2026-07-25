@@ -42,8 +42,10 @@ module l298n_box_walls() {
         translate([-EPS, l298n_box_od_w/2 - wire_notch_w/2, l298n_box_h - wire_notch_h])
             cube([l298n_box_wall + 2*EPS, wire_notch_w, wire_notch_h + EPS]);
         // Khe dây OUTPUT động cơ — cạnh +X — HẠ XUỐNG MỨC SÀN (ĐỔI SO V1) để nối
-        // THẲNG vào kênh dây liền mạch bên ngoài
-        translate([l298n_box_od_l - l298n_box_wall - EPS, l298n_box_od_w/2 - wire_notch_w/2, 0])
+        // THẲNG vào kênh dây liền mạch bên ngoài. z bắt đầu ở -EPS (không phải 0)
+        // để tránh mặt cắt trùng khít với mặt đáy hộp — trùng khít gây non-manifold
+        // (CGAL không xử lý được 2 mặt đồng phẳng tuyệt đối khi boolean).
+        translate([l298n_box_od_l - l298n_box_wall - EPS, l298n_box_od_w/2 - wire_notch_w/2, -EPS])
             cube([l298n_box_wall + 2*EPS, wire_notch_w, wire_notch_h + EPS]);
         // Khe dây LOGIC (ENA/IN1/IN2/GND lên ESP32) — cạnh +Y — RỘNG HƠN v1, chứa
         // nhiều đầu jumper cạnh nhau, vẫn hở miệng hộp (nắp ép giữ)
@@ -100,8 +102,13 @@ module pump_clamp_post() {
     block_h  = pump_clamp_od;
     center_z = pump_clamp_od / 2;
     difference() {
-        translate([0, -pump_clamp_od/2, 0])
-            cube([pump_clamp_w, pump_clamp_od, block_h]);
+        // Đáy khối nhô xuống -EPS (thay vì đúng z=0) để LUÔN CHỒNG LẤN nhẹ vào mặt đế
+        // bên dưới thay vì chạm khít tuyệt đối — mặt đồng phẳng chạm khít giữa 2 solid
+        // riêng (khối yên kẹp ↔ mặt đế đã bị khoét kênh dây) gây non-manifold khi có
+        // từ 2 yên kẹp trở lên cùng đè lên kênh dây liền mạch (xác nhận bằng thử nghiệm
+        // export-stl cô lập lúc triển khai — 1 yên kẹp không lỗi, 2 yên kẹp mới lỗi).
+        translate([0, -pump_clamp_od/2, -EPS])
+            cube([pump_clamp_w, pump_clamp_od, block_h + EPS]);
         // Lỗ khoan ngang (trục X = trục bơm) giữ thân trụ động cơ
         translate([-EPS, 0, center_z])
             rotate([0, 90, 0])
@@ -180,9 +187,13 @@ module pump_station() {
             cube([pump_station_len, pump_station_wid, pump_station_base_t]);
         translate([chan_a_x0, 0, 0]) wire_channel(chan_full_len);
     }
-    // Gờ ray nắp đậy — chỉ 2 đoạn hở (dưới yên kẹp đã được chính yên kẹp che)
-    translate([chan_a_x0, 0, 0]) wire_channel_rails(chan_a_len);
-    translate([chan_b_x0, 0, 0]) wire_channel_rails(chan_b_len);
+    // Gờ ray nắp đậy — chỉ 2 đoạn hở (dưới yên kẹp đã được chính yên kẹp che).
+    // Nới dài thêm EPS mỗi đầu để CHỒNG LẤN (không chỉ chạm khít) vào thành hộp /
+    // khối yên kẹp — 2 mặt phẳng trùng khít tuyệt đối giữa 2 solid riêng khi union
+    // là nguyên nhân gây non-manifold (CGAL không xử lý được mặt đồng phẳng zero-
+    // thickness); chồng lấn nhẹ tránh lỗi này mà không ảnh hưởng hình học nhìn thấy.
+    translate([chan_a_x0 - EPS, 0, 0]) wire_channel_rails(chan_a_len + 2*EPS);
+    translate([chan_b_x0 - EPS, 0, 0]) wire_channel_rails(chan_b_len + 2*EPS);
     // 4 chân đế góc
     foot_sz = 6.0;
     for (fx = [3, pump_station_len - 3 - foot_sz])

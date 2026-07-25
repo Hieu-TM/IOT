@@ -4,6 +4,6 @@
 // Sau in: thử board L298N vào hộp (4 gờ góc phải đỡ được board không cấn),
 // thử lồng ống trụ Ø~31.5mm (hoặc bơm thật) vào 2 yên kẹp từ trên xuống.
 include <../constants.scad>
-use <../components/pump_station_001.scad>
+use <../components/pump_station_002.scad>
 
 pump_station();
