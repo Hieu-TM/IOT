@@ -45,4 +45,15 @@ void aquaPrefsReset(sensor_t *s);
 // Flash đã có cấu hình lưu hay chưa (không áp gì lên sensor).
 bool aquaPrefsIsSaved();
 
+// Trần framesize mà bộ nhớ hiện có kham nổi — đúng giá trị setup() đã truyền
+// vào aquaPrefsApplyDefaults()/aquaPrefsLoad() lúc khởi động.
+//
+// Vì sao lộ ra ngoài: đường HTTP /control?var=framesize cũng phải tôn trọng
+// đúng cái trần này. Trước đây nó chỉ kiểm [0, FRAMESIZE_INVALID) nên trên
+// board không có PSRAM (initCamera() đã hạ xuống SVGA + CAMERA_FB_IN_DRAM),
+// một lệnh val=13 (UXGA) vẫn lọt xuống sensor và cho ảnh cụt — rồi ?var=save
+// ghi nó vào NVS, để lần khởi động sau aquaPrefsLoad() lại lặng lẽ kẹp về
+// SVGA. Cấu hình tự mâu thuẫn với chính nó, không ai thấy lỗi ở đâu.
+framesize_t aquaPrefsMaxFramesize();
+
 #endif  // AQUA_PREFS_H

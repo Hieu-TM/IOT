@@ -10,8 +10,11 @@
 // ===========================
 // Enter your WiFi credentials
 // ===========================
-const char *ssid = "Nha Tro 1998";
-const char *password = "0913603127";
+// Sketch thử nghiệm ban đầu, KHÔNG nạp (xem firmware/aqua_scope_station/README.md).
+// Thông tin WiFi thật đã được gỡ khỏi đây: bản cũ để mật khẩu ngay dòng này và
+// nó đã bị commit + đẩy lên GitHub. Điền tay khi cần chạy lại, đừng commit.
+const char *ssid = "TenWiFiCuaBan";
+const char *password = "MatKhauCuaBan";
 
 void startCameraServer();
 void setupLedFlash();

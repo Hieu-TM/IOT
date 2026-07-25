@@ -40,16 +40,42 @@
 // ---------------------------------------------------------------------------
 // 1) WIFI
 //    Mặc định STA (nối router nhà) — laptop vẫn có internet trong lúc thu.
-//    Nếu router nghẽn / rớt giữa chừng: đổi USE_AP thành true, board tự phát
-//    WiFi "AquaScope", nối laptop vào rồi dùng http://192.168.4.1
+//    Nếu router nghẽn / rớt giữa chừng: đổi AQUA_USE_AP thành true, board tự
+//    phát WiFi "AquaScope", nối laptop vào rồi dùng http://192.168.4.1
+//
+//    SSID/mật khẩu KHÔNG nằm trong file này nữa. Chúng nằm ở wifi_config.h —
+//    file đã .gitignore — vì bản cũ để mật khẩu WiFi thật ngay đây và nó đã bị
+//    commit rồi đẩy lên GitHub. Copy wifi_config.example.h thành wifi_config.h
+//    rồi điền vào đó.
 // ---------------------------------------------------------------------------
-#define USE_AP false
+#if __has_include("wifi_config.h")
+#include "wifi_config.h"
+#define AQUA_HAS_WIFI_CONFIG 1
+#else
+// Thiếu wifi_config.h thì vẫn phải BIÊN DỊCH ĐƯỢC (nếu không, người vừa clone
+// repo về sẽ gặp lỗi compile khó hiểu thay vì một lời nhắc rõ ràng). Dùng giá
+// trị vô hại và chuyển sang chế độ AP: board tự phát WiFi riêng, chạy được
+// ngay mà không cần biết mật khẩu router nào.
+//
+// Lời nhắc được in ra Serial lúc chạy chứ KHÔNG dùng #warning: Arduino IDE mặc
+// định để "Compiler warnings: None", tức truyền -w cho gcc và dập luôn cả
+// #warning. Đã đo: chỉ khi build với --warnings all thì dòng đó mới hiện, nên
+// một cảnh báo lúc biên dịch ở đây thực tế là vô hình.
+#define AQUA_HAS_WIFI_CONFIG 0
+#define AQUA_USE_AP true
+#define AQUA_STA_SSID ""
+#define AQUA_STA_PASS ""
+#define AQUA_AP_SSID "AquaScope"
+#define AQUA_AP_PASS "aquascope"
+#endif
 
-const char *STA_SSID = "Nha Tro 1998";
-const char *STA_PASS = "0913603127";
+#define USE_AP AQUA_USE_AP
 
-const char *AP_SSID = "AquaScope";
-const char *AP_PASS = "aquascope";  // >= 8 ký tự
+const char *STA_SSID = AQUA_STA_SSID;
+const char *STA_PASS = AQUA_STA_PASS;
+
+const char *AP_SSID = AQUA_AP_SSID;
+const char *AP_PASS = AQUA_AP_PASS;  // >= 8 ký tự
 
 void startCameraServer();
 void setupLedFlash();
@@ -160,13 +186,38 @@ void setup() {
   Serial.setDebugOutput(true);
   Serial.println("\n=== Aqua Scope — firmware thu thập dataset ===");
 
+#if !AQUA_HAS_WIFI_CONFIG
+  Serial.println("[CẢNH BÁO] Không tìm thấy wifi_config.h — đang chạy chế độ AP mặc định.");
+  Serial.println("           Muốn nối vào router nhà: copy wifi_config.example.h thành");
+  Serial.println("           wifi_config.h (cùng thư mục) rồi điền SSID/mật khẩu vào đó.");
+  Serial.println("           wifi_config.h đã được .gitignore nên sẽ không lọt vào git.");
+#endif
+
   if (!initCamera()) {
-    Serial.println("Dừng lại: không có camera thì không làm được gì.");
-    return;
+    // KHÔNG `return` như bản cũ. Return ở đây làm setup() kết thúc, loop() chạy
+    // rỗng, và board NẰM CHẾT CÂM tới khi có người tới rút điện — đúng cái mà
+    // chính file này đã bác bỏ ở nhánh WiFi bên dưới ("không chấp nhận được với
+    // trạm chạy dài"). Camera init hỏng phần lớn là lỗi TẠM THỜI: sụt áp lúc
+    // boot khi WiFi TX và camera khởi động trùng nhau (cùng nguyên nhân với
+    // /capture trả 503). Khởi động lại thì lần sau gần như luôn qua được.
+    //
+    // Nếu camera hỏng thật thì đây thành vòng lặp reset — vẫn tốt hơn chết câm:
+    // Serial in rõ lý do mỗi vòng nên soi ra ngay, còn chết câm thì không có
+    // dấu hiệu nào để lần.
+    Serial.println("[LỖI] Camera không khởi tạo được.");
+    Serial.println("      Khởi động lại sau 5 giây để thử lại (thường do sụt áp lúc boot).");
+    Serial.println("      Nếu dòng này lặp mãi: kiểm tra cáp camera và nguồn 5V ≥ 2A.");
+    Serial.flush();
+    delay(5000);
+    ESP.restart();
   }
 
   sensor_t *s = esp_camera_sensor_get();
-  Serial.printf("Sensor PID: 0x%x | PSRAM: %d bytes\n", s->id.PID, ESP.getFreePsram());
+  // %lu + ép kiểu: getFreePsram() trả uint32_t (long unsigned trên ESP32), %d
+  // là sai kiểu. printf lấy tham số theo đúng kiểu mà chuỗi định dạng khai báo,
+  // nên đây là hành vi không xác định chứ không chỉ là cảnh báo của trình dịch.
+  Serial.printf("Sensor PID: 0x%x | PSRAM: %lu bytes\n", s->id.PID,
+                (unsigned long)ESP.getFreePsram());
 
   // Trần framesize mà bộ nhớ hiện có kham nổi - PHẢI khớp với nhánh đã chọn
   // trong initCamera() (UXGA/PSRAM hay SVGA/DRAM). Không truyền cái này vào
@@ -213,9 +264,18 @@ void setup() {
   // esp_task_wdt_add(NULL), loop() dưới kia (nghỉ 10s/lát trong bản cũ là một
   // cục delay(10000)) sẽ luôn bị panic ở giây thứ 5 -> board reset -> setup()
   // chạy lại -> panic lần nữa: boot loop vô tận, không bao giờ phục vụ ảnh.
+  // idle_core_mask: 1 bit mỗi core, bit bật = idle task của core đó cũng bị
+  // watchdog giám sát. Bản cũ để 0, và đó là một tác dụng phụ ngoài ý muốn:
+  // core esp32 3.x lúc boot đã ĐĂNG KÝ SẴN idle task của cả hai core vào TWDT,
+  // nên esp_task_wdt_reconfigure() với mask 0 sẽ GỠ chúng ra. Kết quả ngược
+  // hẳn với điều comment phía trên tuyên bố: một task nào đó quay vòng bận
+  // (busy-loop) làm chết đói idle task sẽ không còn bị bắt nữa - đúng kiểu
+  // treo mà watchdog sinh ra để cứu. Giữ nguyên giám sát idle của cả 2 core,
+  // chỉ nới timeout 5s -> 30s. Nới thì luôn an toàn hơn mặc định của core.
+  const uint32_t ALL_CORES_IDLE_MASK = (1 << portNUM_PROCESSORS) - 1;
   esp_task_wdt_config_t wdtConfig = {
     .timeout_ms = 30000,
-    .idle_core_mask = 0,
+    .idle_core_mask = ALL_CORES_IDLE_MASK,
     .trigger_panic = true,
   };
   esp_err_t wdtErr = esp_task_wdt_init(&wdtConfig);

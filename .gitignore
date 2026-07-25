@@ -16,3 +16,8 @@ web/backend/data/
 
 # Raw collected dataset images — too large for git, not source
 dataset_collector/dataset/
+
+# Thông tin WiFi thật của từng máy — KHÔNG commit.
+# Bản mẫu để copy là firmware/aqua_scope_station/wifi_config.example.h
+firmware/aqua_scope_station/wifi_config.h
+dataset_collector/firmware/myconfig.h

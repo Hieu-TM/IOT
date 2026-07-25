@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "Arduino.h"
+#include <stdarg.h>
 #include "esp_http_server.h"
 #include "esp_timer.h"
 #include "esp_camera.h"
@@ -226,7 +227,11 @@ static esp_err_t stream_handler(httpd_req_t *req) {
   esp_err_t res = ESP_OK;
   size_t _jpg_buf_len = 0;
   uint8_t *_jpg_buf = NULL;
-  char *part_buf[128];
+  // Bản gốc Espressif khai báo `char *part_buf[128]` — MẢNG 128 CON TRỎ (512
+  // byte stack), không phải 128 ký tự, rồi ép kiểu `(char *)part_buf` khi dùng.
+  // Chạy đúng chỉ vì 512 > 128, nhưng đó là nhầm kiểu và phí 384 byte stack của
+  // task httpd. Khai báo đúng thứ thật sự cần.
+  char part_buf[128];
 
   static int64_t last_frame = 0;
   if (!last_frame) {
@@ -273,8 +278,8 @@ static esp_err_t stream_handler(httpd_req_t *req) {
       res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
     }
     if (res == ESP_OK) {
-      size_t hlen = snprintf((char *)part_buf, 128, _STREAM_PART, _jpg_buf_len, _timestamp.tv_sec, _timestamp.tv_usec);
-      res = httpd_resp_send_chunk(req, (const char *)part_buf, hlen);
+      size_t hlen = snprintf(part_buf, sizeof(part_buf), _STREAM_PART, _jpg_buf_len, (int)_timestamp.tv_sec, (int)_timestamp.tv_usec);
+      res = httpd_resp_send_chunk(req, part_buf, hlen);
     }
     if (res == ESP_OK) {
       res = httpd_resp_send_chunk(req, (const char *)_jpg_buf, _jpg_buf_len);
@@ -372,6 +377,14 @@ static esp_err_t cmd_handler(httpd_req_t *req) {
       if (val < 0 || val >= (int)FRAMESIZE_INVALID) {
         log_i("framesize=%d ngoài phạm vi hợp lệ [0, %d) - bỏ qua", val, (int)FRAMESIZE_INVALID);
         res = -1;
+      } else if (val > (int)aquaPrefsMaxFramesize()) {
+        // Vượt trần bộ nhớ (board không PSRAM -> initCamera() đã hạ xuống SVGA
+        // + CAMERA_FB_IN_DRAM). Đặt được thì sensor vẫn nhận, nhưng buffer
+        // không đủ chỗ và ảnh trả về bị cụt - im lặng cho qua ở đây chính là
+        // cách hỏng khó truy nhất. Từ chối rõ ràng thay vì kẹp âm thầm: người
+        // dùng cần biết vì sao độ phân giải họ chọn không có hiệu lực.
+        log_i("framesize=%d vượt trần bộ nhớ (tối đa %d) - từ chối", val, (int)aquaPrefsMaxFramesize());
+        res = -1;
       } else {
         res = s->set_framesize(s, (framesize_t)val);
       }
@@ -441,10 +454,19 @@ static esp_err_t cmd_handler(httpd_req_t *req) {
   }
 #if defined(LED_GPIO_NUM)
   else if (!strcmp(variable, "led_intensity")) {
+    // CỬA HẬU ĐÃ BỊ BỊT. capture_handler và stream_handler đều cố ý không bật
+    // đèn flash GPIO4 (rig chiếu sáng TỪ DƯỚI - đèn từ trên làm nhạt bóng hạt
+    // và tạo phản xạ trên mặt nước), nhưng bản cũ ở đây vẫn gọi enable_led(true)
+    // khi đang stream. Nghĩa là chỉ cần kéo thanh trượt LED trên web UI gốc của
+    // Espressif giữa lúc canh sáng là phá đúng cái mà hai handler kia bảo vệ.
+    //
+    // Vẫn NHẬN lệnh và trả 200 thay vì gỡ hẳn nhánh này: web UI là blob gzip
+    // của Espressif, không sửa được, và thanh trượt LED của nó vẫn tồn tại -
+    // gỡ nhánh này sẽ rơi xuống "Unknown command" và trả 500 mỗi lần chạm vào.
+    // Ghi lại giá trị để /status phản chiếu đúng thứ người dùng vừa kéo, nhưng
+    // KHÔNG bao giờ đẩy xuống phần cứng.
     led_duty = val;
-    if (isStreaming) {
-      enable_led(true);
-    }
+    log_i("led_intensity=%d đã ghi nhận nhưng KHÔNG bật đèn: rig dùng đèn nền từ dưới", val);
   }
 #endif
   else {
@@ -460,8 +482,29 @@ static esp_err_t cmd_handler(httpd_req_t *req) {
   return httpd_resp_send(req, NULL, 0);
 }
 
-static int print_reg(char *p, char *end, sensor_t *s, uint16_t reg, uint32_t mask) {
-  return snprintf(p, end - p, "\"0x%04x\":%d,", reg, s->get_reg(s, reg, mask));
+// Nối chuỗi có định dạng vào [p, end) và trả về con trỏ ghi mới, ĐÃ KẸP tại end.
+//
+// Vì sao cần: snprintf() trả về số ký tự LẼ RA đã viết, không phải số đã viết
+// thật. Nên mẫu của bản gốc Espressif — `p += snprintf(p, end - p, ...)` lặp
+// lại vài chục lần — đẩy p VƯỢT QUA end ngay khi buffer đầy. Lần gọi kế tiếp
+// truyền `end - p` âm; tham số size của snprintf là size_t nên số âm đó biến
+// thành một giá trị khổng lồ, và snprintf ghi thoải mái ra ngoài
+// json_response[]. Đây không phải lo xa: với OV3660/OV5640, status_handler dump
+// 48 thanh ghi (~630 byte) cộng ~340 byte trường trạng thái, chỉ còn dư khoảng
+// 50 byte trong buffer 1024. Chỉ cần thêm vài trường nữa là tràn thật.
+static char *json_append(char *p, char *end, const char *fmt, ...) {
+  if (p >= end) return end;
+  va_list ap;
+  va_start(ap, fmt);
+  int n = vsnprintf(p, (size_t)(end - p), fmt, ap);
+  va_end(ap);
+  if (n < 0) return p;             // lỗi mã hóa: không nhích con trỏ
+  if (n >= end - p) return end;    // đã bị cắt cụt: dừng đúng ở end
+  return p + n;
+}
+
+static char *print_reg(char *p, char *end, sensor_t *s, uint16_t reg, uint32_t mask) {
+  return json_append(p, end, "\"0x%04x\":%d,", reg, s->get_reg(s, reg, mask));
 }
 
 // Escape tối thiểu cho một chuỗi trước khi nhét vào JSON: chỉ `"` và `\` —
@@ -569,67 +612,73 @@ static esp_err_t status_handler(httpd_req_t *req) {
 
   if (s->id.PID == OV5640_PID || s->id.PID == OV3660_PID) {
     for (int reg = 0x3400; reg < 0x3406; reg += 2) {
-      p += print_reg(p, end, s, reg, 0xFFF);  //12 bit
+      p = print_reg(p, end, s, reg, 0xFFF);  //12 bit
     }
-    p += print_reg(p, end, s, 0x3406, 0xFF);
+    p = print_reg(p, end, s, 0x3406, 0xFF);
 
-    p += print_reg(p, end, s, 0x3500, 0xFFFF0);  //16 bit
-    p += print_reg(p, end, s, 0x3503, 0xFF);
-    p += print_reg(p, end, s, 0x350a, 0x3FF);   //10 bit
-    p += print_reg(p, end, s, 0x350c, 0xFFFF);  //16 bit
+    p = print_reg(p, end, s, 0x3500, 0xFFFF0);  //16 bit
+    p = print_reg(p, end, s, 0x3503, 0xFF);
+    p = print_reg(p, end, s, 0x350a, 0x3FF);   //10 bit
+    p = print_reg(p, end, s, 0x350c, 0xFFFF);  //16 bit
 
     for (int reg = 0x5480; reg <= 0x5490; reg++) {
-      p += print_reg(p, end, s, reg, 0xFF);
+      p = print_reg(p, end, s, reg, 0xFF);
     }
 
     for (int reg = 0x5380; reg <= 0x538b; reg++) {
-      p += print_reg(p, end, s, reg, 0xFF);
+      p = print_reg(p, end, s, reg, 0xFF);
     }
 
     for (int reg = 0x5580; reg < 0x558a; reg++) {
-      p += print_reg(p, end, s, reg, 0xFF);
+      p = print_reg(p, end, s, reg, 0xFF);
     }
-    p += print_reg(p, end, s, 0x558a, 0x1FF);  //9 bit
+    p = print_reg(p, end, s, 0x558a, 0x1FF);  //9 bit
   } else if (s->id.PID == OV2640_PID) {
-    p += print_reg(p, end, s, 0xd3, 0xFF);
-    p += print_reg(p, end, s, 0x111, 0xFF);
-    p += print_reg(p, end, s, 0x132, 0xFF);
+    p = print_reg(p, end, s, 0xd3, 0xFF);
+    p = print_reg(p, end, s, 0x111, 0xFF);
+    p = print_reg(p, end, s, 0x132, 0xFF);
   }
 
-  p += snprintf(p, end - p, "\"xclk\":%u,", s->xclk_freq_hz / 1000000);
-  p += snprintf(p, end - p, "\"pixformat\":%u,", s->pixformat);
-  p += snprintf(p, end - p, "\"framesize\":%u,", s->status.framesize);
-  p += snprintf(p, end - p, "\"quality\":%u,", s->status.quality);
-  p += snprintf(p, end - p, "\"brightness\":%d,", s->status.brightness);
-  p += snprintf(p, end - p, "\"contrast\":%d,", s->status.contrast);
-  p += snprintf(p, end - p, "\"saturation\":%d,", s->status.saturation);
-  p += snprintf(p, end - p, "\"sharpness\":%d,", s->status.sharpness);
-  p += snprintf(p, end - p, "\"special_effect\":%u,", s->status.special_effect);
-  p += snprintf(p, end - p, "\"wb_mode\":%u,", s->status.wb_mode);
-  p += snprintf(p, end - p, "\"awb\":%u,", s->status.awb);
-  p += snprintf(p, end - p, "\"awb_gain\":%u,", s->status.awb_gain);
-  p += snprintf(p, end - p, "\"aec\":%u,", s->status.aec);
-  p += snprintf(p, end - p, "\"aec2\":%u,", s->status.aec2);
-  p += snprintf(p, end - p, "\"ae_level\":%d,", s->status.ae_level);
-  p += snprintf(p, end - p, "\"aec_value\":%u,", s->status.aec_value);
-  p += snprintf(p, end - p, "\"agc\":%u,", s->status.agc);
-  p += snprintf(p, end - p, "\"agc_gain\":%u,", s->status.agc_gain);
-  p += snprintf(p, end - p, "\"gainceiling\":%u,", s->status.gainceiling);
-  p += snprintf(p, end - p, "\"bpc\":%u,", s->status.bpc);
-  p += snprintf(p, end - p, "\"wpc\":%u,", s->status.wpc);
-  p += snprintf(p, end - p, "\"raw_gma\":%u,", s->status.raw_gma);
-  p += snprintf(p, end - p, "\"lenc\":%u,", s->status.lenc);
-  p += snprintf(p, end - p, "\"hmirror\":%u,", s->status.hmirror);
-  p += snprintf(p, end - p, "\"vflip\":%u,", s->status.vflip);
-  p += snprintf(p, end - p, "\"dcw\":%u,", s->status.dcw);
-  p += snprintf(p, end - p, "\"colorbar\":%u", s->status.colorbar);
+  p = json_append(p, end, "\"xclk\":%u,", s->xclk_freq_hz / 1000000);
+  p = json_append(p, end, "\"pixformat\":%u,", s->pixformat);
+  p = json_append(p, end, "\"framesize\":%u,", s->status.framesize);
+  p = json_append(p, end, "\"quality\":%u,", s->status.quality);
+  p = json_append(p, end, "\"brightness\":%d,", s->status.brightness);
+  p = json_append(p, end, "\"contrast\":%d,", s->status.contrast);
+  p = json_append(p, end, "\"saturation\":%d,", s->status.saturation);
+  p = json_append(p, end, "\"sharpness\":%d,", s->status.sharpness);
+  p = json_append(p, end, "\"special_effect\":%u,", s->status.special_effect);
+  p = json_append(p, end, "\"wb_mode\":%u,", s->status.wb_mode);
+  p = json_append(p, end, "\"awb\":%u,", s->status.awb);
+  p = json_append(p, end, "\"awb_gain\":%u,", s->status.awb_gain);
+  p = json_append(p, end, "\"aec\":%u,", s->status.aec);
+  p = json_append(p, end, "\"aec2\":%u,", s->status.aec2);
+  p = json_append(p, end, "\"ae_level\":%d,", s->status.ae_level);
+  p = json_append(p, end, "\"aec_value\":%u,", s->status.aec_value);
+  p = json_append(p, end, "\"agc\":%u,", s->status.agc);
+  p = json_append(p, end, "\"agc_gain\":%u,", s->status.agc_gain);
+  p = json_append(p, end, "\"gainceiling\":%u,", s->status.gainceiling);
+  p = json_append(p, end, "\"bpc\":%u,", s->status.bpc);
+  p = json_append(p, end, "\"wpc\":%u,", s->status.wpc);
+  p = json_append(p, end, "\"raw_gma\":%u,", s->status.raw_gma);
+  p = json_append(p, end, "\"lenc\":%u,", s->status.lenc);
+  p = json_append(p, end, "\"hmirror\":%u,", s->status.hmirror);
+  p = json_append(p, end, "\"vflip\":%u,", s->status.vflip);
+  p = json_append(p, end, "\"dcw\":%u,", s->status.dcw);
+  p = json_append(p, end, "\"colorbar\":%u", s->status.colorbar);
 #if defined(LED_GPIO_NUM)
-  p += snprintf(p, end - p, ",\"led_intensity\":%u", led_duty);
+  p = json_append(p, end, ",\"led_intensity\":%u", led_duty);
 #else
-  p += snprintf(p, end - p, ",\"led_intensity\":%d", -1);
+  p = json_append(p, end, ",\"led_intensity\":%d", -1);
 #endif
+  // Hai byte cuối ('}' và '\0') trước đây được ghi vô điều kiện bằng *p++, tức
+  // ghi ra NGOÀI mảng khi p đã chạm end. Chừa chỗ trước: thà JSON cụt còn hơn
+  // hỏng bộ nhớ kề bên.
+  if (p > end - 2) {
+    p = end - 2;
+  }
   *p++ = '}';
-  *p++ = 0;
+  *p = '\0';
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
   return httpd_resp_send(req, json_response, strlen(json_response));

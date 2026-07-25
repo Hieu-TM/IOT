@@ -120,6 +120,8 @@ void aquaPrefsReset(sensor_t *s) {
   aquaPrefsApplyDefaults(s, g_maxFramesize);
 }
 
+framesize_t aquaPrefsMaxFramesize() { return g_maxFramesize; }
+
 bool aquaPrefsIsSaved() {
   prefs.begin(NVS_NS, true);  // read-only
   bool saved = prefs.getBool("saved", false);
