@@ -17,12 +17,12 @@ lại PDF.
 
 | # | Hạng mục | Quyết định | Trạng thái |
 |---|---|---|---|
-| 1 | Vách cong tiêu năng ở rìa khay | **DÙNG** — arc baffle bán kính 17.6mm, góc 90°, cao 5mm | Cần vẽ SCAD kiểm tra va chạm |
-| 2 | Lưới cột trụ thay khe khuếch tán vào | **DÙNG** — Ø1.2mm, khe hở 2.5mm | Cần test thực nghiệm hạt dạng sợi |
-| 3 | Bellmouth ở cổng ra | **DÙNG** — bo R=3mm, Ø6mm→Ø12mm | Rủi ro thấp, ưu tiên làm trước |
-| 4 | PWM soft-stop (MOSFET) | **DÙNG** — IRLZ44N, 20kHz, ramp 300-400ms | Đã đủ dữ liệu, có thể triển khai |
-| 5 | PWM cruise-duty trong pha FILLING | **DÙNG nguyên tắc**, chưa có số cụ thể | Cần thực nghiệm để chốt % duty |
-| 6 | T-Dome dập xung phía hút (cổ hẹp Ø1.2mm) | **CÂN NHẮC NGHIÊM TÚC** (không còn "hoãn") | Cần in thử lỗ Ø1.2mm + chốt V_air |
+| 1 | Vách cong tiêu năng ở rìa khay | **DÙNG** — arc baffle, góc 90°, cao 7mm (bán kính sửa còn 16.4mm, xem lỗi #1 PHẦN D) | **Đã vẽ SCAD, export STL, commit** — xem PHẦN E |
+| 2 | Cửa vào chia dòng thay khe khuếch tán liền | **DÙNG** — ⚠️ hình học ĐÃ ĐỔI khi dựng SCAD: không phải lưới cột trụ Ø1.2mm như dòng dưới mô tả nữa, mà là 4 cửa sổ chữ nhật ngăn bởi gân — xem PHẦN E mục lệch chưa ghi nhận | Hình học build xong; **test thực nghiệm hạt dạng sợi vẫn chưa làm**, và giờ áp dụng cho hình học cửa sổ+gân chứ không phải cột trụ |
+| 3 | Bellmouth ở cổng ra | **DÙNG** — bo R=3mm, Ø6mm→Ø12mm | **Đã vẽ, export STL, kiểm manifold, commit** — xem PHẦN E |
+| 4 | PWM soft-stop (MOSFET) | **DÙNG** — IRLZ44N, 20kHz, ramp 300-400ms | **Đã viết firmware, commit** (`firmware/pump_pwm_test/`). `firmware/pump_l298n_xiao/` chỉ là bản test cá nhân trên chip XIAO rời của người dùng — **không phải firmware của project này** (project dùng ESP32-CAM), không tính vào tiến trình chính thức |
+| 5 | PWM cruise-duty trong pha FILLING | **DÙNG nguyên tắc**, chưa có số cụ thể | Cơ chế dò số đã có sẵn trong firmware (lệnh serial `'d'`, mặc định 55% placeholder) — **số thật vẫn CHẶN bởi đo trên phần cứng thật**, xem PHẦN E |
+| 6 | T-Dome dập xung phía hút (cổ hẹp Ø1.2mm) | **HOÃN cho bản đầu** (quyết định ngầm qua việc không triển khai — nay ghi tường minh, xem PHẦN E) | Không có trong `constants.scad`/SCAD nào; chờ đo tần số bơm thật (#4 PHẦN C) trước khi cân nhắc lại |
 | 7 | Lệch góc cổng ra tạo xoáy (phương án a) | **KHÔNG DÙNG** làm giải pháp chính | — |
 | 8 | Nâng cổng ra thành mép tràn (phương án b) | **LOẠI BỎ** | Vi phạm ràng buộc cứng |
 | 9 | Tách khay 2 khoang qua khe hẹp (phương án d) | **LOẠI BỎ** | Vi phạm ràng buộc cứng |
@@ -210,27 +210,41 @@ quả giảm dần.
 
 ## PHẦN C — VẤN ĐỀ CÒN TỒN ĐỌNG (cần quyết định trước khi vẽ SCAD/viết firmware)
 
+> **Cập nhật 2026-07-25 — 6/8 mục dưới đây đã được giải quyết bởi việc triển khai
+> `docs/superpowers/plans/2026-07-23-khay-lang-song-v003.md` (xong cả 7 Task) và
+> firmware bơm. Đối chiếu chi tiết từng mục + bằng chứng ở PHẦN E cuối tài liệu.**
+
 1. **Phạm vi sửa file:** tạo `flow_tray_003.scad` mới (giữ `_002` để so sánh) hay
-   sửa thẳng `_002`? *(Chưa quyết)*
+   sửa thẳng `_002`? *(✅ Đã quyết — tạo mới, xem PHẦN E #1)*
 2. **Góc đặt chính xác của vách cong (c):** cần vẽ thử trong OpenSCAD để né hộp loe
-   + 3 cửa sổ snap-fit, chưa chốt bằng số trên giấy. *(Chưa quyết)*
+   + 3 cửa sổ snap-fit, chưa chốt bằng số trên giấy. *(✅ Đã quyết — xem PHẦN E #2)*
 3. **Đánh đổi diện tích ảnh Ø40→Ø34mm** do vách cong (c) chiếm chỗ — cần người dùng
-   xác nhận chấp nhận. *(Chưa quyết)*
+   xác nhận chấp nhận. *(⚠️ Đã triển khai với con số cuối Ø31.6mm (khác Ø34mm ước
+   tính ở đây) nhưng CHƯA có xác nhận tường minh của người dùng — xem PHẦN E #3)*
 4. **Đo thật tần số nhịp màng bơm RS365** — ảnh hưởng cả nghi vấn cộng hưởng khay
-   (§2) lẫn thiết kế T-Dome (§6, fn≈5.98Hz nằm giữa dải nghi vấn). *(Chưa đo)*
+   (§2) lẫn thiết kế T-Dome (§6, fn≈5.98Hz nằm giữa dải nghi vấn). *(🔴 Vẫn CHẶN —
+   cần phần cứng thật, không giải quyết được bằng tài liệu/code, xem PHẦN E #4)*
 5. **Chốt V_air cho T-Dome (10 hay 15mL)** — cần nhất quán trước khi tính lại ζ/fn
-   chính xác để đưa vào SCAD. *(Chưa quyết)*
+   chính xác để đưa vào SCAD. *(✅ Vô hiệu — T-Dome hoãn ở bản đầu, xem PHẦN E #5)*
 6. **Có làm T-Dome ở bản đầu hay không** — dù đã hạ mức rủi ro xuống "cân nhắc
-   nghiêm túc", vẫn là 1 chi tiết mới + 1 lỗ nhỏ cần in thử trước. *(Chưa quyết)*
+   nghiêm túc", vẫn là 1 chi tiết mới + 1 lỗ nhỏ cần in thử trước. *(✅ Đã quyết —
+   KHÔNG làm ở bản đầu, xem PHẦN E #6)*
 7. **% PWM cruise-duty trong pha FILLING** để né hiện tượng ực nước — không có công
    thức tính trước, cần thực nghiệm giảm dần từ 100% tới khi hết hiện tượng.
-   *(Chưa có số — cần đo)*
+   *(🔴 Cơ chế dò số đã có trong firmware, nhưng con số thật vẫn CHẶN bởi đo trên
+   phần cứng thật — xem PHẦN E #7)*
 8. **Kiểm tra bellmouth Ø12mm** đủ chỗ tại vị trí cổng ra thật không mỏng thành quá
-   mức. *(Chưa vẽ)*
+   mức. *(✅ Đã vẽ, export STL, kiểm manifold — xem PHẦN E #8)*
 
-**Không còn tồn đọng (đã chốt, có thể triển khai luôn):** vách cong (c) + lưới cột
-(e) như thiết kế hình học đề xuất ở §3.1; bellmouth outlet ở §4; MOSFET IRLZ44N +
-tần số PWM 20kHz + ramp 300-400ms ở §5.
+**Không còn tồn đọng (đã chốt, có thể triển khai luôn):** vách cong (c) + cửa vào
+chia dòng — thay bằng cửa sổ+gân, không phải lưới cột trụ, xem PHẦN E — như thiết
+kế hình học đề xuất ở §3.1; bellmouth outlet ở §4; MOSFET IRLZ44N + tần số PWM
+20kHz + ramp 300-400ms ở §5.
+
+**Còn thật sự tồn đọng sau bản cập nhật 2026-07-25 (chỉ 2 mục, cả 2 đều chặn bởi đo
+đạc trên phần cứng thật, không phải thiếu quyết định hay thiếu hình học):**
+- Đo tần số nhịp màng bơm RS365 thật (mục 4).
+- Dò % PWM cruise-duty thật bằng lệnh `'d'` trên firmware đã sẵn cơ chế (mục 7).
 
 ---
 
@@ -280,3 +294,51 @@ không, hay một chi tiết có thực sự gắn liền vào khối chính hay
 hoàn toàn về công năng. Những tính chất đó phải được chứng minh riêng, bằng mặt cắt
 (cross-section), dò giao cắt bằng khối thăm dò (probe intersection), hoặc đọc số
 `Volumes:` do CGAL báo — không thể suy ra từ kết quả "manifold OK" của bước export.
+
+---
+
+## PHẦN E — Cập nhật tiến trình sau triển khai v003 + firmware bơm (2026-07-25)
+
+Đối chiếu 8 mục "còn tồn đọng" ở PHẦN C với trạng thái thực tế trong repo, sau khi
+`docs/superpowers/plans/2026-07-23-khay-lang-song-v003.md` chạy xong (cả 7 Task đã
+tick `[x]`, đã commit) và firmware bơm PWM được viết. Không mục nào bị coi là "xong"
+bằng cách đoán số — 2 mục (đo tần số bơm thật, chốt % cruise-duty thật) vẫn CHẶN CỨNG
+bởi phép đo trên phần cứng thật và được ghi rõ là còn mở, không phải bị bỏ sót.
+
+| # | Mục ở PHẦN C | Trạng thái mới | Bằng chứng |
+|---|---|---|---|
+| 1 | Phạm vi sửa file | **Đã quyết — tạo mới** | `openscad/components/flow_tray_003.scad` (giữ nguyên `_002` để so sánh); Task 2, `docs/superpowers/plans/2026-07-23-khay-lang-song-v003.md` |
+| 2 | Góc đặt vách cong | **Đã chốt, không va chạm** | `baffle_angle=90` canh giữa tại 180° (`constants.scad:91`, đối diện cổng vào ở −X, quét 135°–225°). 3 cửa sổ snap-fit của khay nằm ở váy ngoài, bán kính ≈`tube_id/2`≈23mm sát mép đáy khay (`flow_tray_003.scad` dòng gần cuối, góc 90/210/330); vách cong nằm ở bán kính 15.8–17.0mm, cao z=6–7mm, phía trong lòng nước — khác hẳn dải bán kính lẫn độ cao, không cùng vùng không gian nên không va chạm |
+| 3 | Đánh đổi diện tích ảnh | **Đã triển khai, CHƯA có xác nhận tường minh — tự flag lại** | Bản build cuối dùng `baffle_r_mid=16.4` (sửa lỗi #1 PHẦN D, không phải 17.6 như lúc viết mục này) → diện tích ảnh còn **Ø31.6mm** (~62%, PHẦN D dòng "Giá phải trả đã chấp nhận"), khác con số Ø34mm ước tính ở PHẦN C. Việc này đã được LÀM (vẽ, export STL, commit) trong lúc chạy plan v003, nhưng không có ghi nhận nào cho thấy người dùng đã được hỏi và xác nhận cụ thể con số Ø31.6mm — coi đây là "đã triển khai tạm", cần bạn xác nhận lại có chấp nhận hay không trước khi in bản cuối |
+| 4 | Đo tần số nhịp màng bơm thật | 🔴 **Vẫn CHẶN — cần phần cứng thật** | Không thể đo bằng thao tác trên máy tính; cần dụng cụ đo tần số/dao động ký hoặc phương pháp gián tiếp (âm thanh/rung) trên bơm RS365 thật. Nằm ngoài phạm vi 1 phiên làm việc chỉ có code/tài liệu |
+| 5 | Chốt V_air cho T-Dome | **Vô hiệu (moot)** | T-Dome không được triển khai ở bản đầu (xem #6) nên chưa cần chốt |
+| 6 | Làm T-Dome ở bản đầu? | **Đã quyết ngầm — KHÔNG làm, nay ghi tường minh** | Không có bất kỳ hằng số `dampener_*`/`throat_*`/`air_chamber_*` nào trong `constants.scad`, không module nào trong `flow_tray_003.scad` hay file `.scad` nào khác dựng T-Dome, và `v003` (7 Task, đã xong) không có Task nào cho hạng mục này. Quyết định thực tế là hoãn — nay ghi lại tường minh: **T-Dome HOÃN cho bản đầu, chờ đo tần số bơm thật (#4) trước khi cân nhắc lại** |
+| 7 | % PWM cruise-duty | 🔴 **Cơ chế đã có, con số thật vẫn CHẶN bởi đo trên phần cứng** | `firmware/pump_pwm_test/pump_pwm_test.ino` (đã commit, chạy trên ESP32-CAM — MCU thật của project) có sẵn `fillDuty=55` làm điểm khởi đầu + lệnh serial `'d'` để dò tăng/giảm khi chạy bơm thật. 55% là placeholder ước lượng, không phải kết quả đo. (`firmware/pump_l298n_xiao/` là bản test cá nhân trên chip XIAO rời, không liên quan tới project) |
+| 8 | Kiểm bellmouth Ø12mm đủ chỗ | **Đã xong** | Task 4, `v003` (vẽ + render kiểm mắt + export STL + kiểm manifold), toàn bộ step đã tick `[x]` |
+
+**1 lệch hình học chưa từng được ghi nhận, phát hiện khi đối chiếu code với PHẦN
+A/§3.1 — không nằm trong 8 mục PHẦN C gốc:** quyết định ban đầu (PHẦN A dòng 2,
+§3.1) chốt "lưới cột trụ" — `post_diameter=1.2mm` dạng các cột tròn rời rạc đứng
+thành hàng, khe hở đều `post_gap`. Nhưng hình học THẬT DỰNG trong
+`flow_tray_003.scad` (`module inlet_windows()`, hằng số `inlet_gap_w`/`inlet_rib_t`/
+`inlet_n_gap` trong `constants.scad`) lại là **4 cửa sổ chữ nhật xuyên thành khay,
+ngăn cách bởi 3 gân 1.2mm** — không phải lưới cột trụ. Về mặt ràng buộc cứng thì
+tương đương (khe hở ≥1.5× hạt — đã sửa từ `post_gap=2.5` thành `inlet_gap_w=3.5` ở
+lỗi #3 PHẦN D), và dễ in hơn hẳn (không có cột mảnh Ø1.2mm dễ gãy/khó in đứng vững),
+nhưng KHÔNG chia dòng nước thành nhiều tia siêu nhỏ như mục đích tiêu năng ban đầu
+của lưới cột trụ (§3 phương án e). Vì vậy: mục "cần test thực nghiệm hạt dạng sợi"
+(PHẦN A dòng 2) vẫn còn mở y nguyên, nhưng giờ áp dụng cho hình học cửa sổ+gân này —
+kết quả kiểm nghiệm sợi trên cột trụ (nếu có tài liệu tham khảo nào dựa vào đó) sẽ
+không còn đúng nữa.
+
+**Tóm lại — sau bản cập nhật này, chỉ còn 2 mục thật sự tồn đọng, cả 2 đều chặn bởi
+đo đạc trên phần cứng thật (không phải thiếu quyết định hay thiếu hình học):**
+1. Đo tần số nhịp màng bơm RS365 thật (mục 4).
+2. Dò % PWM cruise-duty thật bằng lệnh `'d'` trên firmware đã sẵn cơ chế (mục 7) —
+   thực hiện trên `firmware/pump_pwm_test/pump_pwm_test.ino` (MCU thật của project là
+   ESP32-CAM, không phải XIAO). `firmware/pump_l298n_xiao/` chỉ là thử nghiệm cá nhân
+   trên chip rời, không dùng cho project này.
+
+Cả 2 mục này không thể "hoàn tất" bằng cách sửa tài liệu hay code — cần bạn (hoặc ai
+đó có bơm RS365 thật trong tay) đo/thử nghiệm trực tiếp. Mục 3 (đánh đổi diện tích
+ảnh Ø31.6mm) không chặn về mặt kỹ thuật nhưng cần bạn xác nhận chấp nhận hay không.

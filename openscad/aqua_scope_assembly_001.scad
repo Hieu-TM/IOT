@@ -28,7 +28,7 @@ use <components/glass_window_top_001.scad>
 use <components/light_box_002.scad>   // _002: nút bịt khe kiêm cột đỡ khay chữ L
 use <components/led_module_001.scad>
 use <components/accessories_001.scad>
-use <components/pump_station_001.scad>
+use <components/pump_station_002.scad>
 
 explode          = 0;      // 0 = lắp kín
 cam_variant      = 0;      // 0 = XIAO ESP32-S3 + base Matchboxscope (baseline)
