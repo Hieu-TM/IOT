@@ -9,11 +9,18 @@
 
   var POLL_MS = 1000;
   var FLASH_HOLD_MS = 4000;
+  // How long a just-clicked pump button's own optimistic state overrides
+  // whatever /api/runner/status reports, before we give up and trust the
+  // server again. See the pumpPendingAuto comment below for why this exists.
+  var PUMP_PENDING_HOLD_MS = 6000;
   var mode = 'preview';
   var running = false;
   var pollInFlight = false;
   var lastFlashAt = 0;
   var currentDevice = null;
+  var pumpPendingAuto = null;
+  var pumpPendingAt = 0;
+  var initialLatestCode = panel.dataset.latestCode || '';
 
   function $(id) { return document.getElementById(id); }
 
@@ -88,6 +95,11 @@
     if (currentDevice) currentDevice.prefs_saved = saved;
   }
 
+  function setPumpButtons(auto) {
+    setCommandActive('btn-pump-on', auto === true);
+    setCommandActive('btn-pump-off', auto === false);
+  }
+
   /* --- render ------------------------------------------------------- */
 
   function render(s) {
@@ -121,8 +133,22 @@
     }
     markFlashSaved(dev && dev.prefs_saved === true);
     var pump = dev && dev.pump;
-    setCommandActive('btn-pump-on', pump && pump.auto === true);
-    setCommandActive('btn-pump-off', pump && pump.auto === false);
+    var reportedAuto = pump ? pump.auto : null;
+    // /api/runner/status is polled every second, but a pump_auto command sent
+    // to the board is not instantaneous — the board's own /device read (which
+    // `reportedAuto` comes from) can still report the OLD state for one or
+    // more poll ticks after the button was clicked. Without this, a poll
+    // landing in that window flips the highlighted button back to the old
+    // state — including one moment after firmware.finally() reactivates it —
+    // which is exactly the "sáng lộn bên" (wrong side lights up) flicker.
+    // Trust the just-clicked button's own optimistic value until the board's
+    // report catches up (or PUMP_PENDING_HOLD_MS gives up waiting).
+    if (pumpPendingAuto !== null &&
+        (reportedAuto === pumpPendingAuto ||
+         Date.now() - pumpPendingAt > PUMP_PENDING_HOLD_MS)) {
+      pumpPendingAuto = null;
+    }
+    setPumpButtons(pumpPendingAuto !== null ? pumpPendingAuto : reportedAuto);
     var cam = dev && dev.camera;
     setCommandActive('btn-darkmode', cam && !cam.aec && !cam.agc);
 
@@ -146,6 +172,17 @@
     }
 
     var last = s.last;
+    // The dashboard's "Mẫu mới nhất" card, "5 mẫu gần nhất" table and metric
+    // tiles are server-rendered once at page load (index.html/pages.py) with
+    // no client-side data source of their own — a sample written in Đo mode
+    // never appears there until something reloads the page. Do that
+    // automatically the moment a NEW written sample shows up, instead of
+    // making the operator hit refresh themselves.
+    if (last && last.written && last.sample_code &&
+        last.sample_code !== initialLatestCode) {
+      location.reload();
+      return;
+    }
     $('cp-live').hidden = !last;
     if (last) {
       $('cp-last-code').textContent = last.sample_code;
@@ -247,14 +284,18 @@
       });
   });
 
-  function control(varName, val, label, buttonId, activeAfter) {
+  function control(varName, val, label, buttonId, activeAfter, onDone) {
     if (buttonId) setCommandBusy(buttonId, true);
     post('/api/station/control', { var: varName, val: val })
       .then(function () {
         if (buttonId) setCommandActive(buttonId, activeAfter);
         flash(label + ': board đã nhận.', false);
+        if (onDone) onDone(true);
       })
-      .catch(function (e) { flash(label + ' hỏng: ' + e.message, true); })
+      .catch(function (e) {
+        flash(label + ' hỏng: ' + e.message, true);
+        if (onDone) onDone(false);
+      })
       .finally(function () {
         if (buttonId) setCommandBusy(buttonId, false);
       });
@@ -281,12 +322,20 @@
       .finally(function () { setCommandBusy('btn-save', false); });
   });
   $('btn-pump-on').addEventListener('click', function () {
-    control('pump_auto', '1', 'Bơm auto BẬT', 'btn-pump-on', true);
-    setCommandActive('btn-pump-off', false);
+    pumpPendingAuto = true;
+    pumpPendingAt = Date.now();
+    setPumpButtons(true);
+    control('pump_auto', '1', 'Bơm auto BẬT', 'btn-pump-on', true, function (ok) {
+      if (!ok) pumpPendingAuto = null;
+    });
   });
   $('btn-pump-off').addEventListener('click', function () {
-    control('pump_auto', '0', 'Bơm auto TẮT', 'btn-pump-off', true);
-    setCommandActive('btn-pump-on', false);
+    pumpPendingAuto = false;
+    pumpPendingAt = Date.now();
+    setPumpButtons(false);
+    control('pump_auto', '0', 'Bơm auto TẮT', 'btn-pump-off', true, function (ok) {
+      if (!ok) pumpPendingAuto = null;
+    });
   });
 
   $('btn-keep').addEventListener('click', function () {

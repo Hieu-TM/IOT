@@ -1,6 +1,7 @@
 {# Panel điều khiển trạm — nằm NGOÀI nhánh {% if empty %} của index.html:
    lúc chưa có mẫu nào chính là lúc cần nút Bắt đầu nhất. #}
-<section class="card" id="control-panel" style="margin-bottom:20px">
+<section class="card" id="control-panel" style="margin-bottom:20px"
+         data-latest-code="{{ latest.code if latest is defined else '' }}">
   <div class="card-head">
     <h2 class="card-title">Điều khiển trạm</h2>
     <span class="chip" id="runner-state">— đang tải</span>
