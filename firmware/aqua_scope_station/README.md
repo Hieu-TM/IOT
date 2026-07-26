@@ -23,6 +23,7 @@ truy xuất nguồn gốc. Firmware **không** đếm hạt, không lưu trữ, 
 | `GET /stream` | MJPEG xem trực tiếp — chỉ dùng lúc canh sáng |
 | `GET /capture` | Một ảnh JPEG. Chụp lỗi → **503** kèm lý do |
 | `GET /device` | JSON danh tính + thiết lập camera (khối audit) |
+| mDNS `aqua-scope.local` | Board tự xưng tên trong LAN — khỏi mở Serial Monitor lấy IP |
 | `GET /status` | JSON cấu hình cho slider (bản gốc Espressif) |
 | `GET /control?var=darkmode&val=1` | **Bật preset buồng tối backlit** (tắt AEC/AEC-DSP/AGC, gain 0, exposure 200, contrast +2, …) — chạy trước khi chụp khung phân tích |
 | `GET /control?var=save&val=1` | Ghi cứng cấu hình camera + bơm vào flash |
@@ -126,6 +127,20 @@ rút IO0, reset. Mở Serial Monitor 115200 để lấy IP và `device_id`.
 6. **Điều khiển bơm L298N** — state machine Stop-Flow (FILLING/SETTLING/FLUSHING/
    COOLDOWN) với PWM ramp chống búa nước, điều khiển qua HTTP và Serial.
 
+## mDNS — khỏi đi tìm IP
+
+Board tự xưng `aqua-scope.local` sau khi nối WiFi (và tự xưng lại sau mỗi lần
+nối lại). Dashboard web thử tên này trước khi bắt bạn gõ IP.
+
+```
+curl http://aqua-scope.local/device
+```
+
+**Không phải mạng nào cũng cho.** Một số router chặn multicast, mạng khách bật
+AP isolation, vài máy Windows cũ thiếu bộ phân giải .local. Ô nhập IP tay trên
+dashboard là đường dự phòng chính thức — không phải tính năng thừa. Chế độ
+`USE_AP` không bật mDNS (nối thẳng vào board thì IP đã cố định và in ra Serial).
+
 ## Checklist nghiệm thu trên board thật
 
 Chưa chạy đủ các mục này thì **chưa được nói firmware "chạy được"**.
@@ -154,6 +169,10 @@ Chưa chạy đủ các mục này thì **chưa được nói firmware "chạy �
 - [ ] 11. `?var=pump_auto&val=1` → bơm bắt đầu, `/device` báo `pump.auto: true`
 - [ ] 12. `?var=pump_fill_duty&val=150` → trả **HTTP 500** (không phải 200)
 - [ ] 13. `?var=save` → rút điện → cắm lại → `/device` báo đúng timing bơm đã lưu
+- [ ] 14. Serial in `[mdns] http://aqua-scope.local` sau dòng `WiFi OK`
+- [ ] 15. Tắt router 30 giây rồi bật lại → sau khi board tự nối lại,
+      `curl http://aqua-scope.local/device` **vẫn** trả JSON (mDNS được bật lại,
+      không chết theo lần rớt mạng)
 
 ## Chưa có (cố ý)
 

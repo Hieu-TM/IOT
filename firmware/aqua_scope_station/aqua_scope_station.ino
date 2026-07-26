@@ -33,6 +33,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
 
 #include "esp_camera.h"
 #include "esp_task_wdt.h"
@@ -151,6 +152,24 @@ static bool initCamera() {
   return true;
 }
 
+// Tên mDNS cố định: dashboard web thử "aqua-scope.local" trước khi bắt người
+// dùng đi tìm IP. Cố ý KHÔNG gắn device_id vào tên — cái web cần là một tên
+// đoán được, không phải một tên duy nhất.
+static const char *MDNS_HOSTNAME = "aqua-scope";
+
+static void startMdns() {
+  // MDNS.end() trước: hàm này còn được gọi lại ở sự kiện GOT_IP sau mỗi lần
+  // nối lại WiFi. Không đóng phiên cũ thì begin() lần hai thất bại và board
+  // biến mất khỏi .local sau lần rớt mạng đầu tiên — đúng thứ đang muốn bỏ.
+  MDNS.end();
+  if (MDNS.begin(MDNS_HOSTNAME)) {
+    MDNS.addService("http", "tcp", 80);
+    Serial.printf("[mdns] http://%s.local\n", MDNS_HOSTNAME);
+  } else {
+    Serial.println("[mdns] không bật được — dùng IP thay thế.");
+  }
+}
+
 static bool connectWiFi() {
   if (USE_AP) {
     WiFi.mode(WIFI_AP);
@@ -176,6 +195,7 @@ static bool connectWiFi() {
   WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
     Serial.printf("[WiFi] đã nối lại | IP: %s\n",
                   WiFi.localIP().toString().c_str());
+    startMdns();
   }, ARDUINO_EVENT_WIFI_STA_GOT_IP);
 
   WiFi.begin(STA_SSID, STA_PASS);
@@ -197,6 +217,7 @@ static bool connectWiFi() {
   }
   Serial.printf("WiFi OK | IP: %s | RSSI: %d dBm\n",
                 WiFi.localIP().toString().c_str(), WiFi.RSSI());
+  startMdns();
   return true;
 }
 
