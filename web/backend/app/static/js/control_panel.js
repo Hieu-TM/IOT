@@ -8,10 +8,28 @@
   if (!panel) return;
 
   var POLL_MS = 1000;
+  var FLASH_HOLD_MS = 4000;
   var mode = 'preview';
   var running = false;
+  var pollInFlight = false;
+  var lastFlashAt = 0;
 
   function $(id) { return document.getElementById(id); }
+
+  // A FastAPI/pydantic 422 body has `detail` as an array of
+  // {loc, msg, type} objects, not a string — the 400/409 HTTPExceptions in
+  // control.py use a plain Vietnamese string. Normalize both to one message
+  // so the operator never sees "[object Object]".
+  function detailToMessage(detail, fallback) {
+    if (typeof detail === 'string' && detail) return detail;
+    if (Array.isArray(detail) && detail.length) {
+      return detail.map(function (e) {
+        var field = Array.isArray(e.loc) ? e.loc[e.loc.length - 1] : null;
+        return field ? (field + ': ' + e.msg) : e.msg;
+      }).join('; ');
+    }
+    return fallback;
+  }
 
   function post(url, body) {
     return fetch(url, {
@@ -20,13 +38,14 @@
       body: JSON.stringify(body || {})
     }).then(function (r) {
       return r.json().then(function (data) {
-        if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
+        if (!r.ok) throw new Error(detailToMessage(data.detail, 'HTTP ' + r.status));
         return data;
       });
     });
   }
 
   function flash(message, isError) {
+    lastFlashAt = Date.now();
     var box = $('cp-warnings');
     box.hidden = false;
     box.className = 'cp-warnings' + (isError ? ' error' : '');
@@ -64,15 +83,23 @@
         (dev.prefs_saved ? ' · đã lưu cấu hình' : ' · CHƯA lưu cấu hình')
       : 'chưa kết nối';
 
-    var msgs = (s.warnings || []).slice();
-    if (s.error) msgs.unshift(s.error);
-    var box = $('cp-warnings');
-    if (msgs.length) {
-      box.hidden = false;
-      box.className = 'cp-warnings' + (s.error ? ' error' : '');
-      box.textContent = msgs.join('  •  ');
-    } else {
-      box.hidden = true;
+    // A recent flash() (e.g. "Đã lưu ... vào sổ audit.") gets a short grace
+    // window before the status snapshot is allowed to overwrite/hide it —
+    // otherwise a poll tick a moment later erases it before it's read. A
+    // real fault from the snapshot (s.error) always takes over immediately;
+    // only the transient success/info toast gets held.
+    var holdingFlash = !s.error && (Date.now() - lastFlashAt < FLASH_HOLD_MS);
+    if (!holdingFlash) {
+      var msgs = (s.warnings || []).slice();
+      if (s.error) msgs.unshift(s.error);
+      var box = $('cp-warnings');
+      if (msgs.length) {
+        box.hidden = false;
+        box.className = 'cp-warnings' + (s.error ? ' error' : '');
+        box.textContent = msgs.join('  •  ');
+      } else {
+        box.hidden = true;
+      }
     }
 
     var last = s.last;
@@ -92,10 +119,16 @@
   }
 
   function poll() {
+    // Guard against overlap: a slow/unreachable board must not let requests
+    // stack up faster than they resolve. The flag is always cleared in
+    // `finally`, so an error (or a rejected .json()) can never wedge it shut.
+    if (pollInFlight) return;
+    pollInFlight = true;
     fetch('/api/runner/status')
       .then(function (r) { return r.json(); })
       .then(render)
-      .catch(function () { /* server vừa restart — lần poll sau sẽ bắt lại */ });
+      .catch(function () { /* server vừa restart — lần poll sau sẽ bắt lại */ })
+      .finally(function () { pollInFlight = false; });
   }
 
   /* --- mode toggle -------------------------------------------------- */
