@@ -196,7 +196,7 @@ class Runner:
         if self._cfg.mode == "measure":
             written = self._post(metadata, jpeg, code)
         else:
-            # XEM: giữ trong RAM cho trình duyệt xem, không chạm đĩa.
+            # Preview: hold in RAM for the browser to view, don't touch disk.
             self._preview_jpeg = jpeg
             self._preview_metadata = metadata
             written = False
@@ -219,7 +219,7 @@ class Runner:
         return False
 
     def _resolve_device_id(self, device):
-        """Tên board tự báo thắng hằng trong config; cờ tay thắng cả hai."""
+        """The board's self-reported name beats the config constant; the manual override flag beats both."""
         if self._cfg.device_id_override:
             return self._cfg.device_id_override
         board_id = device.get("device_id")
@@ -251,7 +251,7 @@ class Runner:
         return self._preview_jpeg
 
     def keep(self):
-        """Ghi khung XEM đang giữ vào sổ audit (nút 'Lưu mẫu này')."""
+        """Write the held preview frame to the audit trail (the "Keep this sample" dashboard button)."""
         if self._preview_metadata is None or self._preview_jpeg is None:
             raise RuntimeError("chưa có khung nào để lưu.")
         metadata = self._preview_metadata
