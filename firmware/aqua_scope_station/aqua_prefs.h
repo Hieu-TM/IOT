@@ -1,5 +1,5 @@
 /*
- * aqua_prefs — lưu/nạp cấu hình camera vào flash (NVS).
+ * aqua_prefs — lưu/nạp cấu hình camera VÀ bơm vào flash (NVS).
  *
  * Vì sao cần: canh sáng backlit (exposure/gain) mất vài phút mỗi lần. Không có
  * lớp này thì mỗi lần mất điện là phải canh lại từ đầu. Có nó thì chỉnh 1 lần,
@@ -13,9 +13,22 @@
 #define AQUA_PREFS_H
 
 #include "esp_camera.h"
+#include "aqua_pump.h"
 
-// Áp bộ mặc định backlit silhouette lên sensor: TẮT AEC/AEC-DSP/AGC, gain 0,
-// exposure thấp. Gọi ngay sau esp_camera_init(), TRƯỚC aquaPrefsLoad().
+// Áp bộ mặc định lên sensor: phơi sáng AUTO + contrast/brightness/quality/
+// framesize/mirror/flip. Ảnh mặc định vì thế sáng và ngắm được ngay, giống bản
+// CameraWebServer gốc.
+//
+// Lần gọi ĐẦU TIÊN phải là trong setup() ngay sau esp_camera_init(): hàm chụp
+// lại trạng thái AEC/AEC-DSP/AGC nguyên bản của sensor ở lần đó để dùng làm
+// "auto" cho mọi lần gọi sau (từ /control?var=reset). Gọi lần đầu muộn hơn, khi
+// sensor đã bị chuyển sang manual, sẽ ghi nhớ sai và reset không còn trả về auto
+// được nữa — xem ghi chú g_auto* trong aqua_prefs.cpp.
+//
+// Cấu hình backlit silhouette (tắt AEC/AGC + exposure thấp) là thứ NGƯỜI DÙNG
+// tự chỉnh qua /control rồi aquaPrefsSave() — không còn ép cứng ở đây.
+//
+// Gọi ngay sau esp_camera_init(), TRƯỚC aquaPrefsLoad().
 //
 // max_framesize: trần framesize mà bộ nhớ hiện có kham nổi (initCamera() đã
 // tự hạ xuống FRAMESIZE_SVGA + CAMERA_FB_IN_DRAM khi không thấy PSRAM - xem
@@ -36,13 +49,29 @@ void aquaPrefsApplyDefaults(sensor_t *s, framesize_t max_framesize = FRAMESIZE_U
 // mù quáng mỗi lần khởi động.
 bool aquaPrefsLoad(sensor_t *s, framesize_t max_framesize = FRAMESIZE_UXGA);
 
-// Ghi cứng trạng thái sensor hiện tại vào flash.
+// Ghi cứng trạng thái sensor hiện tại VÀ cấu hình bơm vào flash.
+// Một nút lưu cho cả hệ thống.
 void aquaPrefsSave(sensor_t *s);
 
-// Xóa cấu hình đã lưu + áp lại mặc định backlit.
+// Xóa cấu hình đã lưu + áp lại mặc định (auto exposure) + reset timing bơm.
 void aquaPrefsReset(sensor_t *s);
 
 // Flash đã có cấu hình lưu hay chưa (không áp gì lên sensor).
 bool aquaPrefsIsSaved();
+
+// Trần framesize mà bộ nhớ hiện có kham nổi — đúng giá trị setup() đã truyền
+// vào aquaPrefsApplyDefaults()/aquaPrefsLoad() lúc khởi động.
+//
+// Vì sao lộ ra ngoài: đường HTTP /control?var=framesize cũng phải tôn trọng
+// đúng cái trần này. Trước đây nó chỉ kiểm [0, FRAMESIZE_INVALID) nên trên
+// board không có PSRAM (initCamera() đã hạ xuống SVGA + CAMERA_FB_IN_DRAM),
+// một lệnh val=13 (UXGA) vẫn lọt xuống sensor và cho ảnh cụt — rồi ?var=save
+// ghi nó vào NVS, để lần khởi động sau aquaPrefsLoad() lại lặng lẽ kẹp về
+// SVGA. Cấu hình tự mâu thuẫn với chính nó, không ai thấy lỗi ở đâu.
+framesize_t aquaPrefsMaxFramesize();
+
+// Nạp cấu hình bơm đã lưu (nếu có) vào PumpTiming.
+// Trả về true nếu flash có cấu hình bơm, false nếu chưa lưu lần nào.
+bool aquaPumpPrefsLoad();
 
 #endif  // AQUA_PREFS_H

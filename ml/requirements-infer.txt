@@ -1,0 +1,12 @@
+# Dependency TỐI THIỂU để CHẠY suy luận (backend "roboflow" hoặc runner web).
+#
+# Vì sao tách khỏi requirements.txt: file kia kéo cả ultralytics + tensorflow
+# (~2GB) — cần cho TRAIN và EXPORT TFLite, hoàn toàn không cần cho đường chạy
+# thật hiện tại. start.bat cài file này, nên lần khởi động đầu tính bằng giây
+# chứ không phải chục phút.
+#
+# Muốn chạy backend "local" (weights .pt tự train) thì cài thêm:
+#     pip install -r ml/requirements.txt
+requests
+pillow
+numpy

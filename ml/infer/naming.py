@@ -36,3 +36,39 @@ def resolve_px_per_mm(value):
     if value is None or float(value) <= 0:
         return DEFAULT_PX_PER_MM, True
     return float(value), False
+
+
+def station_sample_code(captured_at):
+    """`S{yyyyMMdd}-{HHmmss}-{mmm}` từ thời điểm chụp.
+
+    CHỈ định dạng theo giờ chụp — KHÔNG tự đảm bảo duy nhất giữa hai lần gọi
+    liên tiếp (xem unique_station_sample_code()). Cùng dạng với mã do server
+    sinh (web/backend/app/routers/ingest.py), và khớp sẵn
+    ^[A-Za-z0-9._-]{1,64}$ nên hậu tố "-N" nếu có cũng không cần làm sạch thêm.
+    """
+    return (f"S{captured_at:%Y%m%d}-{captured_at:%H%M%S}-"
+            f"{captured_at.microsecond // 1000:03d}")
+
+
+def unique_station_sample_code(captured_at, used):
+    """Mã cho một khung, đảm bảo KHÔNG trùng bất kỳ mã nào trong `used`.
+
+    `used` là một set bị THAY ĐỔI TẠI CHỖ (mã mới được thêm vào).
+
+    QUAN TRỌNG — vì sao không dùng thẳng station_sample_code():
+    web/backend/app/routers/ingest.py coi sample_code trùng là một bản RETRY
+    và trả về already_exists — KHÔNG báo lỗi. Nếu hai khung liên tiếp sinh
+    trùng mã, khung thứ hai bị ingest âm thầm bỏ qua như thể nó là bản gửi lại
+    của khung đầu, và dữ liệu mất khỏi sổ audit mà không ai biết. Độ phân giải
+    mili-giây của đồng hồ hệ thống KHÔNG đủ đảm bảo khác nhau khi interval_s=0
+    hoặc máy chạy đủ nhanh — nên phải chống trùng bằng cấu trúc dữ liệu ở đây,
+    không dựa vào may mắn của đồng hồ.
+    """
+    base = station_sample_code(captured_at)
+    code = base
+    suffix = 2
+    while code in used:
+        code = f"{base}-{suffix}"
+        suffix += 1
+    used.add(code)
+    return code

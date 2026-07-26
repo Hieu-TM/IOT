@@ -190,6 +190,22 @@ def test_particle_label_cannot_break_out_of_script(client):
     assert "\\u003c/script\\u003e" in html  # escaped, so JSON.parse restores it
 
 
+def test_control_panel_present_on_dashboard(client):
+    html = client.get("/").text
+    assert 'id="control-panel"' in html
+    assert 'id="btn-start"' in html
+    assert "/static/js/control_panel.js" in html
+
+
+def test_control_panel_present_even_with_no_samples():
+    # Trạm chưa có mẫu nào chính là lúc cần nút Bắt đầu nhất — panel phải nằm
+    # NGOÀI nhánh empty của template.
+    c = _make_client(seed=False)
+    html = c.get("/").text
+    assert 'id="control-panel"' in html
+    assert "Chưa có mẫu nào" in html
+
+
 def test_mobile_nav_present_on_every_page(client):
     """The sidebar is display:none ≤900px; the .mobile-nav strip must carry the
     same three destinations so navigation survives on phones."""

@@ -118,6 +118,14 @@ GET /api/export.csv?from=...&to=...&batch_lot=...
 - `GET /api/samples/{id}` → đầy đủ sample + mảng particles + histogram phân bố kích thước tính sẵn (bin cố định, ví dụ 0.3mm/bin từ 0–5mm, khớp phạm vi thiết kế trong `CLAUDE.md`).
 - **Không có route PUT/PATCH/DELETE ở bất kỳ đâu** — đây là cách enforce yêu cầu append-only ở tầng kiến trúc, không chỉ là quy ước UI.
 
+> **Cập nhật 2026-07-26** (spec `2026-07-26-one-process-local-workflow-design.md`
+> §5.1): append-only vẫn đúng cho **dữ liệu mẫu** — không route nào ở bất kỳ
+> đâu có PUT/PATCH/DELETE, nên một mẫu đã ghi thì không sửa và không xoá được.
+> Nhưng hệ đã có thêm các route POST **điều khiển** (`/api/runner/start|stop`,
+> `/api/settings`, `/api/station/control`). Chúng đổi trạng thái lúc chạy
+> (worker thread, file cấu hình vận hành) và cấu hình của board, **không** đụng
+> tới bản ghi đã lưu.
+
 ---
 
 ## 3. Database schema

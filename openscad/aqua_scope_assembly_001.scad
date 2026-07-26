@@ -28,6 +28,7 @@ use <components/glass_window_top_001.scad>
 use <components/light_box_002.scad>   // _002: nút bịt khe kiêm cột đỡ khay chữ L
 use <components/led_module_001.scad>
 use <components/accessories_001.scad>
+use <components/pump_station_002.scad>
 
 explode          = 0;      // 0 = lắp kín
 cam_variant      = 0;      // 0 = XIAO ESP32-S3 + base Matchboxscope (baseline)
@@ -93,6 +94,12 @@ if (show_pump) {
     // Bơm đặt trên mặt bàn (z = vành đáy vỏ), lệch +X, cách xa chống rung
     translate([120 + 1.5*e, 0, z_housing_bot])
         rotate([0, 0, 180]) pump_rs365();
+    // Trạm bơm gọn (đế + hộp L298N + yên kẹp) — đặt CẠNH pump_rs365() để so kích
+    // thước khi render. Vị trí không khớp pixel-perfect với placeholder pump_rs365()
+    // ở trên (placeholder giả định motor tựa thẳng mặt bàn; yên kẹp thật nâng bơm
+    // cao hơn mặt bàn ~19mm để an toàn kết cấu — xem comment trong pump_station_001.scad).
+    // Khi lắp bơm THẬT, đặt nó vào đúng lòng 2 yên kẹp, không cần khớp model này.
+    translate([190 + 1.5*e, 0, z_housing_bot]) pump_station();
     // Ống mềm chỉ vẽ khi LẮP KÍN (explode thì ẩn — chi tiết mềm không "tách")
     if (e == 0) {
         // Ống RA: từ ngạnh khay (+X, z=3) tới bơm (2 đoạn gấp khúc đơn giản)
