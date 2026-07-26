@@ -113,15 +113,15 @@ def _validate(data):
         if isinstance(px, bool) or not isinstance(px, (int, float)):
             raise SettingsError("px_per_mm phải là số hoặc để trống.")
         if px <= 0:
-            # <= 0 không phải tỉ lệ vật lý hợp lệ và sẽ chảy thẳng vào size_mm
-            # của mọi hạt.
+            # <= 0 is not a valid physical ratio and would flow straight into
+            # every particle's size_mm.
             raise SettingsError("px_per_mm phải lớn hơn 0 (hoặc để trống).")
         data["px_per_mm"] = float(px)
 
 
 def _write_atomic(path, text):
-    """Ghi qua file tạm rồi os.replace — mất điện giữa chừng không để lại
-    file JSON cụt mà lần mở sau phải đoán."""
+    """Write via a temp file then os.replace — a power loss mid-write must not
+    leave a truncated JSON file that the next open has to guess about."""
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:

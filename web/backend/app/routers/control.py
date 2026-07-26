@@ -9,6 +9,14 @@ own camera/pump settings.
 always targets the configured station. Otherwise it would be a general-purpose
 "make the server fetch this URL" tool for anyone on the LAN. The `var`
 allowlist exists for the same reason at the parameter level.
+
+`/api/station/probe` DOES take a host from the request and has the server
+fetch it — that property is not avoided here, only narrowed: HOST_RE (the
+same rule settings_store uses for station_host) constrains the request to
+`http://<host[:port]>/device`, so a caller on the LAN can steer the server's
+probe at an arbitrary LAN/internet host of their choosing but cannot inject a
+different scheme, path, or query. Acceptable for this LAN threat model; do not
+read this as "the server never fetches attacker-influenced URLs".
 """
 
 import re

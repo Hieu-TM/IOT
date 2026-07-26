@@ -16,6 +16,17 @@ mà `start.bat` mở ra; cửa sổ `start.bat` ban đầu tự đóng ngay sau 
 bình thường, không phải lỗi. Muốn dừng server thì bấm **Ctrl+C** hoặc đóng
 cửa sổ **"Aqua Scope Server"** (không phải cửa sổ đã đóng).
 
+> **Trước khi bấm Bắt đầu:** `ml/config.toml` mặc định `backend = "local"`,
+> nhưng repo này **không** kèm sẵn `ml/models/best.pt` (weights không commit
+> được) và `ml/requirements-infer.txt` cũng cố tình không cài ultralytics/
+> torch — nên trên một máy mới clone, bước 4 dưới đây sẽ báo lỗi 400
+> "local.weights not found". Chọn một trong hai hướng trước:
+> * đổi sang `backend = "roboflow"` trong `ml/config.toml` và điền
+>   `roboflow.api_key` (+ workspace/workflow_id) vào `ml/config.local.toml`
+>   (file này gitignore, không commit key); hoặc
+> * cài `pip install -r ml/requirements.txt` rồi tự train/đặt weights vào
+>   `ml/models/best.pt` (xem `[local]` trong `ml/config.toml`).
+
 Trên dashboard:
 
 1. Bấm **Dò** — tìm board qua `aqua-scope.local`. Không thấy thì gõ IP tay

@@ -53,9 +53,21 @@
     box.textContent = message;
   }
 
+  // Resolves `true` on success, `false` on failure — never rejects, so
+  // fire-and-forget callers (setMode, btn-probe) that don't chain off the
+  // return value keep working exactly as before: the failure still flashes
+  // here and nothing else changes for them. A caller that DOES need to know
+  // whether the save actually landed (btn-start, below) checks the boolean
+  // instead of relying on the promise settling — this used to always resolve
+  // (even on failure) with no way for a caller to tell, so btn-start's
+  // `.then(...)` chain ran unconditionally and could start a measurement run
+  // under stale settings.
   function saveSettings(patch) {
-    return post('/api/settings', patch).catch(function (e) {
+    return post('/api/settings', patch).then(function () {
+      return true;
+    }).catch(function (e) {
       flash('Không lưu được cấu hình: ' + e.message, true);
+      return false;
     });
   }
 
@@ -142,6 +154,14 @@
         ? 'đã ghi vào sổ audit'
         : 'KHÔNG ghi (chế độ Xem)';
       $('btn-keep').hidden = last.written || !s.has_preview;
+      // In Đo mode has_preview is always false (measure writes straight to
+      // the audit trail and never holds a RAM frame — see runner.py's
+      // `_capture_and_process`), so #cp-preview's src would stay "" while
+      // #cp-live is unhidden above. An empty src on an <img> re-requests the
+      // current page URL in several browsers and renders as a broken-image
+      // box — hide the element itself instead of leaving it pointed at
+      // nothing.
+      $('cp-preview').hidden = !s.has_preview;
       if (s.has_preview) {
         // cache-bust: khung đổi mỗi chu kỳ, cùng một URL
         $('cp-preview').src = '/api/runner/preview.jpg?t=' + encodeURIComponent(last.at);
@@ -186,9 +206,14 @@
     saveSettings({
       station_host: $('cp-host').value.trim(),
       batch_lot: $('cp-lot').value.trim() || null
-    }).then(function () {
-      return post('/api/runner/start', { mode: mode });
-    }).then(render).catch(function (e) {
+    }).then(function (saved) {
+      // saveSettings() already flashed the "Không lưu được cấu hình: ..."
+      // message on failure — short-circuit here instead of piling
+      // "Không bắt đầu được" on top of it, and instead of starting the run
+      // under whatever station_host/batch_lot were last saved to disk.
+      if (!saved) return;
+      return post('/api/runner/start', { mode: mode }).then(render);
+    }).catch(function (e) {
       flash('Không bắt đầu được: ' + e.message, true);
     });
   });

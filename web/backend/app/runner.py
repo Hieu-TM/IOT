@@ -27,6 +27,16 @@ from pathlib import Path
 from typing import Optional
 
 
+def _repo_root():
+    """The one place this file derives where the repo root is.
+
+    Everything that needs a repo-root-relative path (sys.path, ml/config.toml,
+    a relative local.weights) must call this instead of re-deriving it, so
+    there is exactly one definition to keep correct.
+    """
+    return Path(__file__).resolve().parents[3]
+
+
 def _ensure_repo_on_path():
     """Put the repo root on sys.path so `import ml.infer...` works.
 
@@ -36,7 +46,7 @@ def _ensure_repo_on_path():
     not - so fix it here rather than making the import order depend on how the
     process was launched.
     """
-    repo_root = Path(__file__).resolve().parents[3]
+    repo_root = _repo_root()
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
@@ -47,20 +57,33 @@ from ml.infer.mapper import build_metadata          # noqa: E402
 from ml.infer.naming import unique_station_sample_code  # noqa: E402
 
 POLL_INTERVAL_S = 0.5
-# ~5s of silence at the default poll interval. Long enough to ride out a WiFi
-# hiccup, short enough that a dead board is reported instead of spun on.
+# default_station_factory gives StationClient timeout_s=8, retries=2, so one
+# read_device()/capture_once() call has a worst case of
+# 2 * 8s + one CAPTURE_RETRY_BACKOFF_S (0.3s) backoff ~= 16.3s. At the default
+# poll interval, 10 consecutive failures is therefore up to
+# ~10 * 16.3s = 163s of silence before a dead board is reported - not the ~5s
+# this comment used to claim (true only before the station client grew
+# timeout_s=8, retries=2). Kept at 10 anyway: a WiFi hiccup that outlasts a
+# couple of retries can still outlast several ticks, and reporting "dead"
+# too eagerly is worse than waiting a few minutes for a truly dead board.
 MAX_CONSECUTIVE_ERRORS = 10
 SETTLING = "SETTLING"
 
 # Ceiling for stop()'s thread.join(), not a typical wait — the loop spends
 # almost all its time in stop_event.wait(), where the join returns within
 # milliseconds of the event being set. This only gets exercised when the
-# worker is blocked inside a single station HTTP call at the moment Stop is
-# pressed. default_station_factory gives StationClient timeout_s=8, retries=2,
-# so the worst case for one read_device()/capture_once() call is
-# 2 * 8s + one CAPTURE_RETRY_BACKOFF_S (0.3s) backoff ≈ 16.3s. 20s sits just
-# above that, so an ordinary Stop issued mid-poll always joins cleanly.
-STOP_JOIN_TIMEOUT_S = 20.0
+# worker is blocked inside tick() at the moment Stop is pressed, and a single
+# tick() can serially perform: read_device() (<=16.3s, see
+# MAX_CONSECUTIVE_ERRORS above) + capture_once() (<=16.3s) +
+# detector.run() (local CPU, treated as ~0) + _post(), which calls
+# ml/infer/ingest_client.post(..., timeout=30) by default. Worst case for one
+# tick is therefore ~16.3 + 16.3 + 30 = ~62.6s - not the
+# "2 * 8s + 0.3s ≈ 16.3s for one station call" this used to claim, which
+# ignored _post() entirely. 70s sits just above that 62.6s worst case, so an
+# ordinary Stop issued mid-tick still joins cleanly; it may just take up to
+# that long against a station/backend that is slow but alive rather than
+# actually hung.
+STOP_JOIN_TIMEOUT_S = 70.0
 
 
 class RunnerBusy(RuntimeError):
@@ -117,8 +140,18 @@ class Runner:
         self._counters = {"cycles": 0, "captured": 0, "written": 0, "failed": 0}
         self._last = None
         self._used_codes = set()
-        self._preview_jpeg = None
-        self._preview_metadata = None
+        # Published as ONE tuple, rebound in a single statement, never as two
+        # separate attributes: rebinding one name is atomic under the GIL, so
+        # any HTTP-thread read either sees the previous complete pair or the
+        # new complete pair - never a mix of this cycle's metadata with the
+        # last cycle's JPEG (or vice versa). Do NOT split this back into
+        # `self._preview_jpeg` / `self._preview_metadata` "for clarity" - that
+        # reintroduces the exact race keep() was written to avoid: the worker
+        # could publish a new frame between two independent reads on the HTTP
+        # thread, and keep() would post a mismatched image+metadata pair
+        # straight into the append-only audit trail with no way to detect it
+        # afterwards.
+        self._preview = None
 
     def arm(self, cfg):
         """Build the station + detector and mark the runner live.
@@ -270,8 +303,9 @@ class Runner:
             written = self._post(metadata, jpeg, code)
         else:
             # Preview: hold in RAM for the browser to view, don't touch disk.
-            self._preview_jpeg = jpeg
-            self._preview_metadata = metadata
+            # Single rebind — see the comment on `self._preview` in
+            # _reset_state for why this must stay one statement.
+            self._preview = (jpeg, metadata)
             written = False
 
         self._last = {
@@ -321,15 +355,23 @@ class Runner:
     # --- preview ----------------------------------------------------------
 
     def preview_jpeg(self):
-        return self._preview_jpeg
+        frame = self._preview
+        return frame[0] if frame is not None else None
 
     def keep(self):
-        """Write the held preview frame to the audit trail (the "Keep this sample" dashboard button)."""
-        if self._preview_metadata is None or self._preview_jpeg is None:
+        """Write the held preview frame to the audit trail (the "Keep this sample" dashboard button).
+
+        Reads `self._preview` exactly once into a local so the jpeg/metadata
+        pair posted below is always the pair from a single worker cycle, even
+        if the worker publishes a newer frame the instant after this line
+        runs.
+        """
+        frame = self._preview
+        if frame is None:
             raise RuntimeError("chưa có khung nào để lưu.")
-        metadata = self._preview_metadata
+        jpeg, metadata = frame
         code = metadata["sample_code"]
-        written = self._post(metadata, self._preview_jpeg, code)
+        written = self._post(metadata, jpeg, code)
         if self._last is not None and self._last["sample_code"] == code:
             self._last["written"] = written
         return {"sample_code": code, "written": written}
@@ -348,7 +390,7 @@ class Runner:
             "last": self._last,
             "error": self._error,
             "warnings": self._warnings,
-            "has_preview": self._preview_jpeg is not None,
+            "has_preview": self._preview is not None,
         })
 
 
@@ -385,6 +427,23 @@ def default_detector_factory():
 
     cfg = ml_config.load(_repo_root() / "ml" / "config.toml")
     backend = cfg.get("general", "backend")
+
+    # config.toml documents `local.weights` as repo-root-relative
+    # ("ml/models/best.pt"), but ml.infer.config.Config.missing_for() and
+    # build_detector() both resolve it against the process's CWD via
+    # Path.is_file(). That is correct for the CLI (always invoked from the
+    # repo root) but not for this server, which _ensure_repo_on_path()
+    # already lets run from any CWD - resolve a relative path against the
+    # same repo root before either sees it, so Start doesn't depend on how
+    # uvicorn was launched. Leave an absolute path (e.g. an operator-supplied
+    # override) untouched. Mutated in place on `cfg` (not just a local
+    # variable) so missing_for()'s own weights check below - which re-reads
+    # cfg.get("local", "weights") itself - sees the same resolved path
+    # instead of independently failing on the original relative one.
+    weights = cfg.get("local", "weights")
+    if backend == "local" and weights and not Path(weights).is_absolute():
+        cfg._data["local"]["weights"] = str(_repo_root() / weights)
+
     problems = cfg.missing_for(backend)
     if problems:
         raise RunnerConfigError(
@@ -400,10 +459,6 @@ def default_poster(api_url, metadata, image_bytes, image_name):
     from ml.infer.ingest_client import post
 
     return post(api_url, metadata, image_bytes, image_name)
-
-
-def _repo_root():
-    return Path(__file__).resolve().parents[3]
 
 
 def build_config_from_settings(mode=None):

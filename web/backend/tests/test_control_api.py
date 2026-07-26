@@ -137,6 +137,17 @@ def test_settings_rejects_bad_value_with_400(client):
     assert "capture_delay_ms" in r.json()["detail"]
 
 
+def test_settings_body_fields_match_settings_store_defaults():
+    # Drift alarm: SettingsBody and settings_store.DEFAULTS are two
+    # independent declarations of the same key set (see the module
+    # docstrings). Nothing enforces they stay in sync except this test - if
+    # someone adds a key to one and forgets the other, this is the thing that
+    # notices instead of a silent 422/dropped-field bug reaching the operator.
+    from app import settings_store
+
+    assert set(control.SettingsBody.model_fields) == set(settings_store.DEFAULTS)
+
+
 def test_control_rejects_var_outside_allowlist(client, monkeypatch):
     # Không allowlist thì đây là proxy mở: ai trong LAN cũng bắn được tham số
     # tuỳ ý vào firmware.
