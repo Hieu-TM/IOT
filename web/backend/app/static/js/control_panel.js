@@ -13,6 +13,7 @@
   var running = false;
   var pollInFlight = false;
   var lastFlashAt = 0;
+  var currentDevice = null;
 
   function $(id) { return document.getElementById(id); }
 
@@ -58,10 +59,28 @@
     });
   }
 
+  function setCommandActive(buttonId, active) {
+    var button = $(buttonId);
+    button.classList.toggle('cp-command-active', !!active);
+    button.setAttribute('aria-pressed', String(!!active));
+  }
+
+  function setCommandBusy(buttonId, busy) {
+    var button = $(buttonId);
+    button.classList.toggle('cp-command-busy', !!busy);
+    button.disabled = !!busy;
+  }
+
+  function markFlashSaved(saved) {
+    setCommandActive('btn-save', saved === true);
+    if (currentDevice) currentDevice.prefs_saved = saved;
+  }
+
   /* --- render ------------------------------------------------------- */
 
   function render(s) {
     running = s.running;
+    if (s.device) currentDevice = s.device;
     $('runner-state').textContent = s.running
       ? (s.mode === 'measure' ? 'đang ĐO' : 'đang XEM')
       : 'đã dừng';
@@ -76,12 +95,24 @@
     $('btn-stop').disabled = !s.running;
     $('cp-phase').textContent = 'pha bơm: ' + (s.phase || '—');
 
-    var dev = s.device;
-    $('cp-board-info').textContent = dev
-      ? (dev.device_id || '?') + ' · ' + (dev.firmware || '?') +
+    var dev = s.device || currentDevice;
+    if (dev) {
+      var savedLabel = dev.prefs_saved === true
+        ? ' · đã lưu cấu hình'
+        : (dev.prefs_saved === false ? ' · CHƯA lưu cấu hình' : '');
+      $('cp-board-info').textContent =
+        (dev.device_id || '?') + ' · ' + (dev.firmware || '?') +
         ' · RSSI ' + ((dev.wifi && dev.wifi.rssi) || '?') + ' dBm' +
-        (dev.prefs_saved ? ' · đã lưu cấu hình' : ' · CHƯA lưu cấu hình')
-      : 'chưa kết nối';
+        savedLabel;
+    } else {
+      $('cp-board-info').textContent = 'chưa kết nối';
+    }
+    markFlashSaved(dev && dev.prefs_saved === true);
+    var pump = dev && dev.pump;
+    setCommandActive('btn-pump-on', pump && pump.auto === true);
+    setCommandActive('btn-pump-off', pump && pump.auto === false);
+    var cam = dev && dev.camera;
+    setCommandActive('btn-darkmode', cam && !cam.aec && !cam.agc);
 
     // A recent flash() (e.g. "Đã lưu ... vào sổ audit.") gets a short grace
     // window before the status snapshot is allowed to overwrite/hide it —
@@ -180,6 +211,8 @@
         });
       })
       .then(function (dev) {
+        currentDevice = dev;
+        markFlashSaved(dev.prefs_saved === true);
         saveSettings({ station_host: host });
         $('cp-board-info').textContent =
           'tìm thấy ' + (dev.device_id || '?') + ' · ' + (dev.firmware || '?');
@@ -189,23 +222,43 @@
       });
   });
 
-  function control(varName, val, label) {
+  function control(varName, val, label, buttonId, activeAfter) {
+    if (buttonId) setCommandBusy(buttonId, true);
     post('/api/station/control', { var: varName, val: val })
-      .then(function () { flash(label + ': board đã nhận.', false); })
-      .catch(function (e) { flash(label + ' hỏng: ' + e.message, true); });
+      .then(function () {
+        if (buttonId) setCommandActive(buttonId, activeAfter);
+        flash(label + ': board đã nhận.', false);
+      })
+      .catch(function (e) { flash(label + ' hỏng: ' + e.message, true); })
+      .finally(function () {
+        if (buttonId) setCommandBusy(buttonId, false);
+      });
   }
 
   $('btn-darkmode').addEventListener('click', function () {
-    control('darkmode', '1', 'Canh sáng buồng tối');
+    control('darkmode', '1', 'Canh sáng buồng tối', 'btn-darkmode', true);
   });
   $('btn-save').addEventListener('click', function () {
-    control('save', '1', 'Lưu vào flash');
+    if (currentDevice && currentDevice.prefs_saved === true) {
+      markFlashSaved(true);
+      return;
+    }
+    setCommandBusy('btn-save', true);
+    post('/api/station/control', { var: 'save', val: '1' })
+      .then(function () {
+        markFlashSaved(true);
+        flash('Lưu vào flash: board đã nhận.', false);
+      })
+      .catch(function (e) { flash('Lưu vào flash hỏng: ' + e.message, true); })
+      .finally(function () { setCommandBusy('btn-save', false); });
   });
   $('btn-pump-on').addEventListener('click', function () {
-    control('pump_auto', '1', 'Bơm auto BẬT');
+    control('pump_auto', '1', 'Bơm auto BẬT', 'btn-pump-on', true);
+    setCommandActive('btn-pump-off', false);
   });
   $('btn-pump-off').addEventListener('click', function () {
-    control('pump_auto', '0', 'Bơm auto TẮT');
+    control('pump_auto', '0', 'Bơm auto TẮT', 'btn-pump-off', true);
+    setCommandActive('btn-pump-on', false);
   });
 
   $('btn-keep').addEventListener('click', function () {
