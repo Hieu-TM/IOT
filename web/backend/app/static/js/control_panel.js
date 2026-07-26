@@ -175,7 +175,7 @@
     fetch('/api/station/probe?host=' + encodeURIComponent(host))
       .then(function (r) {
         return r.json().then(function (d) {
-          if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+          if (!r.ok) throw new Error(detailToMessage(d.detail, 'HTTP ' + r.status));
           return d;
         });
       })
