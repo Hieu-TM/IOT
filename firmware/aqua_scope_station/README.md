@@ -139,7 +139,7 @@ curl http://aqua-scope.local/device
 **Không phải mạng nào cũng cho.** Một số router chặn multicast, mạng khách bật
 AP isolation, vài máy Windows cũ thiếu bộ phân giải .local. Ô nhập IP tay trên
 dashboard là đường dự phòng chính thức — không phải tính năng thừa. Chế độ
-`USE_AP` không bật mDNS (nối thẳng vào board thì IP đã cố định và in ra Serial).
+`USE_AP` không bật mDNS — nối thẳng vào board tại `http://192.168.4.1`.
 
 ## Checklist nghiệm thu trên board thật
 
