@@ -239,10 +239,13 @@
     control('darkmode', '1', 'Canh sáng buồng tối', 'btn-darkmode', true);
   });
   $('btn-save').addEventListener('click', function () {
-    if (currentDevice && currentDevice.prefs_saved === true) {
-      markFlashSaved(true);
-      return;
-    }
+    // Do NOT short-circuit on `currentDevice.prefs_saved === true` here.
+    // prefs_saved is a sticky NVS flag meaning "something has been saved to
+    // flash at some point", not "the current settings are saved" — it stays
+    // true forever after the first save until `?var=reset`. Gating the POST
+    // on it made every save after the first a silent no-op: the operator
+    // re-tunes exposure, presses Save, sees no error, and the new values
+    // never reach flash. Always POST; only the indicator reflects prefs_saved.
     setCommandBusy('btn-save', true);
     post('/api/station/control', { var: 'save', val: '1' })
       .then(function () {

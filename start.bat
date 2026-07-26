@@ -35,6 +35,11 @@ REM Chay server trong cua so PowerShell rieng roi de start.bat thoat ngay.
 REM Neu chay uvicorn truc tiep trong batch, Ctrl+C se di vao cmd.exe va sinh
 REM prompt "Terminate batch job (Y/N)?" hoac ma loi gia. PowerShell child nam
 REM giu tien trinh dai han, nen Ctrl+C dung server sach hon va khong pha batch.
-start "Aqua Scope Server" powershell -NoProfile -ExecutionPolicy Bypass -File "%CD%\scripts\start-server.ps1" -Python "%PY%"
+start "Aqua Scope Server" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start-server.ps1" -Python "%PY%"
+if errorlevel 1 (
+  echo [LOI] Khong mo duoc cua so PowerShell cho server. Kiem tra powershell.exe co trong PATH va file scripts\start-server.ps1 co ton tai khong.
+  pause
+  exit /b 1
+)
 
 endlocal

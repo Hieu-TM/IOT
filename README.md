@@ -11,6 +11,11 @@ Aqua Scope là dự án chuyển đổi cụm camera của kính hiển vi mini 
 Bấm đúp **`start.bat`** ở thư mục gốc. Nó tự tạo môi trường ảo, cài thư viện ở
 lần đầu, khởi động backend và mở `http://localhost:8000`.
 
+Backend chạy trong một **cửa sổ PowerShell riêng** tên **"Aqua Scope Server"**
+mà `start.bat` mở ra; cửa sổ `start.bat` ban đầu tự đóng ngay sau đó — đó là
+bình thường, không phải lỗi. Muốn dừng server thì bấm **Ctrl+C** hoặc đóng
+cửa sổ **"Aqua Scope Server"** (không phải cửa sổ đã đóng).
+
 Trên dashboard:
 
 1. Bấm **Dò** — tìm board qua `aqua-scope.local`. Không thấy thì gõ IP tay
