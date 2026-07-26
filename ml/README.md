@@ -91,25 +91,22 @@ per-particle (ghi rõ hạn chế này, không âm thầm bỏ qua).
 
 ## Chạy nhanh
 
-### Đo mẫu thật từ board (đường chạy chính)
+### Đo mẫu thật từ board — dùng dashboard
+
+Đường chạy chính giờ là **`start.bat`** ở gốc repo (xem `README.md`): nó khởi
+động backend web và bạn điều khiển bằng nút trên `http://localhost:8000` —
+chụp + suy luận liên tục theo từng chu kỳ bơm, không giới hạn số khung.
+
+CLI dưới đây vẫn dùng được và **không đổi hành vi**, hợp cho chạy lô cố định
+hoặc chạy trong script:
 
 ```bash
-# 1. Bật backend web (terminal riêng)
-cd web/backend && python -m uvicorn app.main:app --port 8000
-
-# 2. Kiểm tra cấu hình — không gọi API, không in API key
 python -m ml.infer --check-config
-
-# 3. Chụp từ board → suy luận → ghi sổ audit, một lệnh
 python -m ml.infer --from-board 192.168.1.50 --count 5 --interval 2
 ```
 
-Board phải chạy [`firmware/aqua_scope_station/`](../firmware/aqua_scope_station/).
-IP lấy từ Serial Monitor 115200. Đặt `[station].host` trong `ml/config.local.toml`
-thì khỏi gõ `--from-board` mỗi lần.
-
-`device_id` ghi vào sổ audit là **tên board tự báo** (ví dụ `aqua-cam-a1b2c3`),
-không phải hằng `ingest.device_id` — trừ khi bạn ép bằng `--device-id`.
+Cả hai đường dùng chung `ml/infer/` (`StationClient` → detector → mapper →
+ingest) và cùng ghi vào một sổ audit.
 
 ### Chạy lại trên ảnh đã có
 

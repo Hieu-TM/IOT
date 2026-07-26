@@ -6,6 +6,38 @@ Aqua Scope là dự án chuyển đổi cụm camera của kính hiển vi mini 
 
 ---
 
+## Chạy hệ thống (đường ngắn nhất)
+
+Bấm đúp **`start.bat`** ở thư mục gốc. Nó tự tạo môi trường ảo, cài thư viện ở
+lần đầu, khởi động backend và mở `http://localhost:8000`.
+
+Trên dashboard:
+
+1. Bấm **Dò** — tìm board qua `aqua-scope.local`. Không thấy thì gõ IP tay
+   (Serial Monitor 115200 in ra IP lúc board khởi động).
+2. Bấm **Canh sáng buồng tối** rồi **Lưu vào flash** (chỉ cần làm một lần cho
+   mỗi rig — cấu hình được nhớ qua các lần mất điện).
+3. Bấm **Bơm auto BẬT**.
+4. Chọn **Xem** hoặc **Đo**, rồi bấm **Bắt đầu**.
+
+Mỗi chu kỳ bơm sinh một khung ở pha lắng (SETTLING); hệ thống chạy tới khi bấm
+**Dừng** — không còn giới hạn số ảnh.
+
+| Chế độ | Ghi vào sổ audit? | Dùng khi |
+|---|---|---|
+| **Xem** | Không | canh sáng, chỉnh rig, thử nghiệm |
+| **Đo** | Có, mỗi chu kỳ một mẫu | đo thật, cần truy xuất nguồn gốc |
+
+> **Cảnh báo triển khai:** backend lắng nghe trên `0.0.0.0:8000` để mở được từ
+> điện thoại trong cùng LAN, và **không có xác thực**. Đây là rig demo trong
+> mạng nội bộ — đừng chuyển tiếp cổng này ra Internet.
+>
+> Chế độ **Đo** chạy dài sẽ tích ảnh trong `web/backend/data/images/`
+> (~300KB/mẫu, chu kỳ 15s ≈ 70MB/giờ). Chưa có dọn rác tự động — tự theo dõi
+> dung lượng đĩa nếu chạy nhiều giờ liền.
+
+---
+
 ## 🎯 Bối Cảnh Ứng Dụng (Use Case)
 
 **Kiểm soát chất lượng nước đầu vào cho nhà máy chế biến thực phẩm.** Hệ được đặt ở **điểm lấy nước đầu vào**, kiểm tra nước **trước khi** đưa vào dây chuyền sản xuất, nhằm phát hiện và định lượng hạt/rác vĩ mô (1–5mm) lẫn trong nguồn nước.
