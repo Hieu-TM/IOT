@@ -130,6 +130,48 @@ class Runner:
     def disarm(self):
         self._running = False
 
+    def start(self, cfg, poll_interval_s=POLL_INTERVAL_S):
+        """arm() plus a background thread that calls tick() until stop()."""
+        with self._lock:
+            if self._thread is not None and self._thread.is_alive():
+                raise RunnerBusy("runner đang chạy rồi.")
+            self.arm(cfg)                       # raises RunnerConfigError if host is missing
+            self._stop_event = threading.Event()
+            self._thread = threading.Thread(
+                target=self._run_loop,
+                args=(self._stop_event, poll_interval_s),
+                name="aqua-runner",
+                daemon=True,                    # don't keep the process alive on shutdown
+            )
+            self._thread.start()
+
+    def stop(self, timeout=5.0):
+        """Idempotent: calling this while idle is a no-op."""
+        with self._lock:
+            thread, event = self._thread, self._stop_event
+            self._thread = self._stop_event = None
+        if event is not None:
+            event.set()
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=timeout)
+        self.disarm()
+
+    def _run_loop(self, stop_event, poll_interval_s):
+        while not stop_event.is_set():
+            try:
+                self.tick()
+            except Exception as exc:   # noqa: BLE001 - last line of defense: tick()
+                # already handles its own per-cycle failures, so anything that
+                # reaches here is a bug. Record it and keep the thread alive
+                # rather than dying silently and leaving the dashboard stuck
+                # showing "running" forever.
+                self._error = f"lỗi không lường trước trong vòng lặp: {exc}"
+            if not self._running:
+                # tick() already stopped itself (board died for too long) — exit
+                # instead of looping on a station that is no longer usable.
+                break
+            stop_event.wait(poll_interval_s)
+
     # --- one poll iteration ----------------------------------------------
 
     def tick(self):
@@ -284,3 +326,92 @@ def _label_counts(particles):
     for p in particles:
         counts[p["label"]] = counts.get(p["label"], 0) + 1
     return counts
+
+
+# --- real wiring -----------------------------------------------------------
+
+
+def default_station_factory(host):
+    from ml.infer.station import StationClient
+
+    return StationClient(host)
+
+
+def default_detector_factory():
+    """Build the configured detector, lazily.
+
+    Called on Start, never at import: with backend="local" this pulls
+    ultralytics + torch in, which would add tens of seconds to every server
+    start even for someone who only wanted to read history.
+    """
+    from ml.infer import config as ml_config
+    from ml.infer.cli import build_detector
+
+    cfg = ml_config.load(_repo_root() / "ml" / "config.toml")
+    backend = cfg.get("general", "backend")
+    problems = cfg.missing_for(backend)
+    if problems:
+        raise RunnerConfigError(
+            f"backend suy luận {backend!r} chưa chạy được: " + " | ".join(problems))
+    try:
+        return build_detector(cfg, backend, cfg.get("local", "weights"))
+    except Exception as exc:       # noqa: BLE001
+        raise RunnerConfigError(
+            f"không dựng được backend {backend!r}: {exc}") from exc
+
+
+def default_poster(api_url, metadata, image_bytes, image_name):
+    from ml.infer.ingest_client import post
+
+    return post(api_url, metadata, image_bytes, image_name)
+
+
+def _repo_root():
+    return Path(__file__).resolve().parents[3]
+
+
+def build_config_from_settings(mode=None):
+    """Merge data/settings.json with ml/config.toml per the spec's precedence.
+
+    settings.json wins for station_host / px_per_mm; empty falls back to
+    ml/config.toml. `mode` passed by the caller (the start request) always
+    wins over the remembered UI default.
+    """
+    from ml.infer import config as ml_config
+
+    from . import settings_store
+
+    s = settings_store.load()
+    ml = ml_config.load(_repo_root() / "ml" / "config.toml")
+
+    host = s["station_host"] or (ml.get("station", "host") or "")
+    px = s["px_per_mm"]
+    if px is None:
+        px = ml.get("calibration", "px_per_mm")
+    if px is None or float(px) <= 0:
+        # Same honesty rule as the CLI: size_mm is a PLACEHOLDER until a real
+        # px/mm is measured on the rig.
+        from ml.infer.naming import DEFAULT_PX_PER_MM
+
+        px = DEFAULT_PX_PER_MM
+
+    return RunnerConfig(
+        mode=mode or s["mode"],
+        station_host=host,
+        capture_delay_s=s["capture_delay_ms"] / 1000.0,
+        px_per_mm=float(px),
+        batch_lot=s["batch_lot"],
+        api_url=ml.get("ingest", "api_url") or "http://localhost:8000",
+    )
+
+
+RUNNER = Runner(
+    station_factory=default_station_factory,
+    detector_factory=default_detector_factory,
+    poster=default_poster,
+)
+
+
+def get_runner():
+    """Seam for tests: FastAPI dependency override swaps in a fake Runner."""
+    return RUNNER
