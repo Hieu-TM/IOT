@@ -45,7 +45,9 @@ app.include_router(control.router)
 # Server-rendered dashboard pages (/, /history, /samples/{id}, /stream).
 app.include_router(pages.router)
 
-# Static assets. app/static is committed; data/images is created at startup by
-# create_db_and_tables(), so it always exists by the time this mount is hit.
+# Static assets. app/static is committed. StaticFiles validates its directory
+# at import time, before lifespan can run, so ensure the runtime images folder
+# exists here as well as in create_db_and_tables().
+config.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=config.APP_DIR / "static"), name="static")
 app.mount("/images", StaticFiles(directory=config.IMAGES_DIR), name="images")

@@ -31,22 +31,10 @@ if not exist ".venv\.deps-installed" (
 )
 
 echo [3/3] Khoi dong Aqua Scope tai http://localhost:8000
-start "" http://localhost:8000
-"%PY%" -m uvicorn --app-dir web/backend app.main:app --host 0.0.0.0 --port 8000
-
-REM Ma loi 3 = uvicorn.config.STARTUP_FAILURE (vd: cong 8000 dang bi chiem) -
-REM day la ma loi RIENG cua uvicorn cho "khong khoi dong duoc", da xac minh
-REM trong ma nguon uvicorn cai trong .venv. Dung "if errorlevel 3 if not
-REM errorlevel 4" (khop CHINH XAC ma 3) thay vi "if errorlevel 1" (khop MOI ma
-REM >=1) vi ma rong hon se bao loi GIA khi operator bam Ctrl+C de dung binh
-REM thuong: cmd.exe hien "Terminate batch job (Y/N)?", va tra loi N roi ve
-REM day voi mot errorlevel khac 3 (uvicorn thoat sach da tat KeyboardInterrupt,
-REM khong goi sys.exit(3) vi server.started=True). Kiem dung ma 3 tranh bao
-REM loi gia tren duong dung pho bien nhat.
-if errorlevel 3 if not errorlevel 4 (
-  echo [LOI] Uvicorn thoat voi ma loi 3 - khong khoi dong duoc. Kiem cong 8000 co dang bi chiem khong ^(vd: mot start.bat khac dang chay^).
-  pause
-  exit /b 1
-)
+REM Chay server trong cua so PowerShell rieng roi de start.bat thoat ngay.
+REM Neu chay uvicorn truc tiep trong batch, Ctrl+C se di vao cmd.exe va sinh
+REM prompt "Terminate batch job (Y/N)?" hoac ma loi gia. PowerShell child nam
+REM giu tien trinh dai han, nen Ctrl+C dung server sach hon va khong pha batch.
+start "Aqua Scope Server" powershell -NoProfile -ExecutionPolicy Bypass -File "%CD%\scripts\start-server.ps1" -Python "%PY%"
 
 endlocal
