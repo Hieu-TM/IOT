@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - **Python 3.11+** (`ml/infer/config.py` dùng `tomllib` trong thư viện chuẩn).
-- **Không thêm dependency mới nào** ngoài những gì đã có trong `web/requirements.txt`. Worker chỉ dùng `threading` + `requests`.
+- **Dependency runtime mới: đúng một cái, `numpy`.** Nó là dependency bắc cầu không tránh được: `runner.py` → `ml.infer.cli` → `ml.infer.detector` → `import numpy` ở tầng module. Ngoài `numpy`, không thêm gì so với `web/requirements.txt` (`requests` và `pillow` đã có sẵn ở đó). Worker chỉ dùng `threading` + `requests`.
 - **Không thư viện JS ngoài, không CDN, không webfont.** Dashboard phải chạy được trên LAN offline hoàn toàn (quyết định đã có từ Module 5).
 - **Toàn bộ chuỗi hiển thị cho người dùng viết bằng tiếng Việt.** Comment trong code: theo file đang sửa (`ml/infer/` phần lớn tiếng Việt, `web/backend/app/` phần lớn tiếng Anh — bám theo file, đừng đổi ngôn ngữ của file có sẵn).
 - **Không đổi hành vi công khai của `ml.infer` CLI.** Cờ `--count`, `--interval`, `--from-board`, `--dry-run`, `--check-config` giữ nguyên nghĩa. Toàn bộ `ml/tests/` hiện có phải xanh sau mỗi task.
@@ -37,6 +37,7 @@
 | `web/backend/app/settings_store.py` | Đọc/ghi `data/settings.json` (tham số vận hành) + validate |
 | `web/backend/tests/test_settings_store.py` | Test cho settings store |
 | `web/backend/app/runner.py` | `Runner` — máy trạng thái + worker thread + factory thật |
+| `web/backend/tests/fakes_runner.py` | Board/detector/poster/đồng hồ giả, dùng chung cho 2 file test của Runner |
 | `web/backend/tests/test_runner.py` | Test máy trạng thái (gọi `tick()` trực tiếp, không đụng thread) |
 | `web/backend/tests/test_runner_thread.py` | Test vòng đời thread start/stop |
 | `web/backend/app/routers/control.py` | `/api/runner/*`, `/api/station/*`, `/api/settings` |
@@ -875,6 +876,7 @@ git commit -m "feat(web): settings_store - tham số vận hành sửa được 
 
 **Files:**
 - Create: `web/backend/app/runner.py`
+- Create: `web/backend/tests/fakes_runner.py`
 - Create: `web/backend/tests/test_runner.py`
 
 **Interfaces:**
@@ -892,22 +894,19 @@ git commit -m "feat(web): settings_store - tham số vận hành sửa được 
 
 **Vì sao tách `tick()` khỏi thread:** máy trạng thái là thứ dễ sai nhất (chụp 4 lần một chu kỳ, hoặc không chụp lần nào) và cũng là thứ khó test nhất nếu trộn với `threading` + `sleep`. Test gọi `tick()` tay với đồng hồ giả → xác định, không flaky. Thread là việc của Task 5.
 
-- [ ] **Step 1: Viết test (phải fail)**
+- [ ] **Step 1a: Viết `web/backend/tests/fakes_runner.py`**
 
-Tạo `web/backend/tests/test_runner.py`:
+Đồ giả nằm ở file riêng vì Task 5 (`test_runner_thread.py`) dùng lại đúng
+những class này. Import chéo giữa hai file test (`from tests.test_runner import
+...`) chạy được nhưng phụ thuộc việc `web/backend` có nằm trên `sys.path` —
+một file helper tường minh thì không phụ thuộc gì.
 
 ```python
-"""Runner — máy trạng thái chụp theo cạnh pha bơm.
+"""Board / detector / poster / đồng hồ giả cho test của Runner.
 
-Gọi tick() trực tiếp với đồng hồ giả: máy trạng thái phải xác định, không phụ
-thuộc thread timing. Vòng đời thread nằm ở test_runner_thread.py.
+Dùng chung bởi test_runner.py (máy trạng thái) và test_runner_thread.py (vòng
+đời thread) — hai góc nhìn của cùng một đối tượng, cùng một bộ đồ giả.
 """
-
-from datetime import datetime, timezone
-
-import pytest
-
-from app.runner import (MAX_CONSECUTIVE_ERRORS, Runner, RunnerConfig)
 
 
 class FakeDetection:
@@ -995,6 +994,22 @@ class FakeClock:
 
     def advance(self, seconds):
         self.t += seconds
+```
+
+- [ ] **Step 1b: Viết `web/backend/tests/test_runner.py` (phải fail)**
+
+```python
+"""Runner — máy trạng thái chụp theo cạnh pha bơm.
+
+Gọi tick() trực tiếp với đồng hồ giả: máy trạng thái phải xác định, không phụ
+thuộc thread timing. Vòng đời thread nằm ở test_runner_thread.py.
+"""
+
+import pytest
+
+from app.runner import MAX_CONSECUTIVE_ERRORS, Runner, RunnerConfig
+from tests.fakes_runner import (FakeClock, FakeDetector, FakePoster,
+                                FakeStation)
 
 
 def make_runner(station, detector=None, poster=None, clock=None, mode="measure",
@@ -1567,7 +1582,7 @@ Expected: PASS (20 test).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/backend/app/runner.py web/backend/tests/test_runner.py
+git add web/backend/app/runner.py web/backend/tests/test_runner.py web/backend/tests/fakes_runner.py
 git commit -m "feat(web): Runner - máy trạng thái chụp một khung mỗi chu kỳ bơm"
 ```
 
@@ -1605,7 +1620,7 @@ import time
 import pytest
 
 from app.runner import Runner, RunnerBusy, RunnerConfig, RunnerConfigError
-from tests.test_runner import FakeDetector, FakePoster, FakeStation
+from tests.fakes_runner import FakeDetector, FakePoster, FakeStation
 
 
 def make_cfg(host="board.local", mode="preview"):
