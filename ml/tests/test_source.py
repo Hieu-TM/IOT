@@ -1,8 +1,4 @@
-import io
-import json
-import threading
 from datetime import datetime, timezone
-from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 from PIL import Image
@@ -43,6 +39,16 @@ def test_folder_source_accepts_single_file(tmp_path):
     assert frames[0].sample_code == "solo"
 
 
+def test_capture_source_exposes_station_client():
+    # Ủy quyền chứ không sao chép: sửa retry/validate ở StationClient là cả
+    # CLI lẫn runner web cùng được, không phải sửa hai nơi.
+    from ml.infer.station import StationClient
+
+    with FakeBoard([("jpeg", jpeg_bytes())],
+                   device_response=("json", DEVICE_JSON)) as board:
+        src = Esp32CaptureSource(board.host, count=1, interval_s=0)
+        assert isinstance(src.client, StationClient)
+        assert src.device_id == "aqua-cam-a1b2c3"
 
 
 def test_reads_device_info_then_yields_frames():
