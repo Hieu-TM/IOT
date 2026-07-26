@@ -52,6 +52,16 @@ POLL_INTERVAL_S = 0.5
 MAX_CONSECUTIVE_ERRORS = 10
 SETTLING = "SETTLING"
 
+# Ceiling for stop()'s thread.join(), not a typical wait — the loop spends
+# almost all its time in stop_event.wait(), where the join returns within
+# milliseconds of the event being set. This only gets exercised when the
+# worker is blocked inside a single station HTTP call at the moment Stop is
+# pressed. default_station_factory gives StationClient timeout_s=8, retries=2,
+# so the worst case for one read_device()/capture_once() call is
+# 2 * 8s + one CAPTURE_RETRY_BACKOFF_S (0.3s) backoff ≈ 16.3s. 20s sits just
+# above that, so an ordinary Stop issued mid-poll always joins cleanly.
+STOP_JOIN_TIMEOUT_S = 20.0
+
 
 class RunnerBusy(RuntimeError):
     """Start requested while a run is already in progress."""
@@ -145,16 +155,37 @@ class Runner:
             )
             self._thread.start()
 
-    def stop(self, timeout=5.0):
-        """Idempotent: calling this while idle is a no-op."""
+    def stop(self, timeout=STOP_JOIN_TIMEOUT_S):
+        """Idempotent: calling this while idle is a no-op.
+
+        Only forgets the thread once the join actually confirms it has
+        stopped. Clearing the handles before joining would let a station
+        call that hangs past the join timeout hide the still-live worker
+        from start()'s busy-check (which looks at self._thread) — the next
+        Start would then spawn a second thread against the same station,
+        and both would mutate the same unlocked counters/audit state.
+        """
         with self._lock:
             thread, event = self._thread, self._stop_event
-            self._thread = self._stop_event = None
         if event is not None:
             event.set()
-        if thread is not None and thread.is_alive():
-            thread.join(timeout=timeout)
         self.disarm()
+        if thread is None:
+            return
+        thread.join(timeout=timeout)
+        if thread.is_alive():
+            # Still blocked inside a station HTTP call past the join
+            # ceiling. Leave the handles in place so a retried start() still
+            # sees this worker as alive instead of doubling it up.
+            self._error = (
+                f"chưa dừng được worker sau {timeout:.0f}s — board có thể "
+                "đang treo giữa một lệnh HTTP. Thử bấm Dừng lại.")
+            return
+        with self._lock:
+            # Identity check: a concurrent start() may already have
+            # installed a new thread while we were joining the old one.
+            if self._thread is thread:
+                self._thread = self._stop_event = None
 
     def _run_loop(self, stop_event, poll_interval_s):
         while not stop_event.is_set():
@@ -334,7 +365,12 @@ def _label_counts(particles):
 def default_station_factory(host):
     from ml.infer.station import StationClient
 
-    return StationClient(host)
+    # Tighter than StationClient's own defaults (timeout_s=20, retries=3),
+    # which suit a one-shot CLI batch run. A worker that must stay
+    # responsive to a dashboard Stop button needs a bounded worst case:
+    # 2 * 8s + one CAPTURE_RETRY_BACKOFF_S (0.3s) backoff ~= 16.3s per call,
+    # which is what STOP_JOIN_TIMEOUT_S is sized against.
+    return StationClient(host, timeout_s=8, retries=2)
 
 
 def default_detector_factory():
