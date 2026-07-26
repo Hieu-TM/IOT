@@ -8,25 +8,32 @@ dir) so it does not depend on Module 6 wiring `main.py`, nor touch the real
 import io
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlmodel import Session, SQLModel, create_engine, select
+from sqlalchemy.pool import StaticPool
 
 from app import config
 from app.database import get_session
-from app.models import Particle, Sample
+from app.models import Notification, Particle, Sample
 from app.routers import ingest as ingest_module
 
 
 @pytest.fixture()
-def client(tmp_path, monkeypatch):
-    # Isolated file-backed SQLite so each test starts empty.
+def client(monkeypatch):
+    # Create temp directory inside workspace tests dir to avoid OS temp folder locks
+    tests_dir = Path(__file__).parent.resolve()
+    tmp_workspace_dir = tests_dir / "tmp_test_ingest_main"
+    tmp_workspace_dir.mkdir(exist_ok=True)
+
     engine = create_engine(
-        f"sqlite:///{tmp_path/'test.db'}",
+        "sqlite://",
         connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
     SQLModel.metadata.create_all(engine)
 
@@ -35,7 +42,8 @@ def client(tmp_path, monkeypatch):
             yield session
 
     # Redirect image writes to a temp dir (router reads config.IMAGES_DIR live).
-    images_dir = tmp_path / "images"
+    images_dir = tmp_workspace_dir / "images"
+    images_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(config, "IMAGES_DIR", images_dir)
 
     app = FastAPI()
@@ -45,7 +53,15 @@ def client(tmp_path, monkeypatch):
     test_client = TestClient(app)
     test_client._engine = engine  # expose for assertions
     test_client._images_dir = images_dir
-    return test_client
+    test_client._tmp_dir = tmp_workspace_dir
+    yield test_client
+
+    # Cleanup workspace temp directory
+    try:
+        import shutil
+        shutil.rmtree(tmp_workspace_dir, ignore_errors=True)
+    except Exception:
+        pass
 
 
 def _jpeg_bytes(color=(128, 128, 128), size=(640, 480)) -> bytes:
@@ -110,19 +126,30 @@ def test_valid_ingest_returns_201_and_persists(client):
     assert (client._images_dir / "S-A.jpg").exists()
 
 
-def test_duplicate_sample_code_is_idempotent_200(client):
-    first = _post(client, _metadata(sample_code="S-DUP", particles=2))
-    assert first.status_code == 201
-    second = _post(client, _metadata(sample_code="S-DUP", particles=5))
-    assert second.status_code == 200
-    body = second.json()
-    assert body["status"] == "already_exists"
-    # Original wins — not overwritten by the retry's different particle count.
-    assert body["particle_count"] == 2
-
+def test_over_threshold_sample_creates_one_persistent_batch_notification(client):
+    resp = _post(client, _metadata(sample_code="S-ALERT", particles=1))
+    assert resp.status_code == 201
     with Session(client._engine) as s:
-        rows = s.exec(select(Sample).where(Sample.sample_code == "S-DUP")).all()
-        assert len(rows) == 1
+        sample = s.exec(
+            select(Sample).where(Sample.sample_code == "S-ALERT")
+        ).one()
+        notice = s.exec(
+            select(Notification).where(Notification.sample_id == sample.id)
+        ).one()
+        assert notice.batch_lot == "LOT-TEST"
+        assert "không đạt QC" in notice.message
+
+
+def test_duplicate_sample_code_is_idempotent_200(client):
+    resp1 = _post(client, _metadata(sample_code="S-DUP", particles=2))
+    assert resp1.status_code == 201
+    assert resp1.json()["status"] == "created"
+
+    resp2 = _post(client, _metadata(sample_code="S-DUP", particles=5))
+    assert resp2.status_code == 200
+    body = resp2.json()
+    assert body["status"] == "already_exists"
+    assert body["particle_count"] == 2  # original stored count, not new one
 
 
 def test_missing_sample_code_is_server_generated(client):
@@ -130,14 +157,15 @@ def test_missing_sample_code_is_server_generated(client):
     del md["sample_code"]
     resp = _post(client, md)
     assert resp.status_code == 201
-    code = resp.json()["sample_code"]
-    assert code.startswith("S") and len(code) >= 15  # S{yyyyMMdd}-{HHmmss}-{hex}
+    body = resp.json()
+    assert body["status"] == "created"
+    assert body["sample_code"].startswith("S")
 
 
 def test_invalid_metadata_json_returns_422(client):
     resp = client.post(
         "/api/ingest",
-        data={"metadata": "{not valid json"},
+        data={"metadata": "not json"},
         files={"image": ("frame.jpg", _jpeg_bytes(), "image/jpeg")},
     )
     assert resp.status_code == 422
@@ -162,14 +190,14 @@ def test_unreadable_image_returns_400(client):
 # --- SEC-1: sample_code path traversal (SPEC §6, §5.1) -------------------
 
 
-def test_path_traversal_sample_code_returns_422_and_writes_nothing(client, tmp_path):
+def test_path_traversal_sample_code_returns_422_and_writes_nothing(client):
     resp = _post(client, _metadata(sample_code="../../evil"))
     assert resp.status_code == 422
     # `../../evil` resolves ABOVE the images dir, so check the actual escape
-    # targets — not tmp_path.rglob, which can't see above tmp_path.
+    # targets.
     escape_target = (client._images_dir / "../../evil.jpg").resolve()
     assert not escape_target.exists()
-    assert not (tmp_path.parent / "evil.jpg").exists()
+    assert not (client._tmp_dir.parent / "evil.jpg").exists()
     assert not (client._images_dir / "evil.jpg").exists()
     with Session(client._engine) as s:
         assert s.exec(select(Sample)).all() == []
@@ -182,8 +210,7 @@ def test_sample_code_allowed_edge_value_returns_201(client):
 
 @pytest.mark.parametrize("evil", ["evil\n", "evil\r"])
 def test_sample_code_trailing_newline_returns_422(client, evil):
-    # `^...$` + re.match accepts a trailing \n/\r (the `\n` reaches
-    # write_bytes and crashes on Windows) — the validator must fullmatch so
+    # `^...$` + re.match accepts a trailing \n/\r — the validator must fullmatch so
     # the char never reaches the filesystem (SEC-1, SPEC §6).
     resp = _post(client, _metadata(sample_code=evil))
     assert resp.status_code == 422

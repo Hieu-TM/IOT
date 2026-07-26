@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon, note %}
+{% from "_macros.html" import icon %}
 {% block content %}
 <div class="page stack" style="gap:16px">
 
@@ -41,11 +41,11 @@
     </div>
   </section>
 
-  {{ note([
+  {# Removed design note:
     'Thuần frontend (canvas + vanilla JS): mô phỏng dòng chảy backlit, không gọi backend, không ghi DB — bảo toàn nguyên tắc append-only.',
     'Toggle "Hiện detection" cho phép cú "reveal" khi trình chiếu: bật stream thấy dòng chảy, gạt detection thì bbox màu theo loại hiện đè lên.',
     'Dùng đúng bảng màu nhãn và hệ số 14 px/mm như mock_sender để stream và ảnh tĩnh trông cùng một hệ. Điểm mở rộng: thay nền canvas bằng MJPEG thật của ESP32.',
-  ]) }}
+  #}
 </div>
 {% endblock %}
 

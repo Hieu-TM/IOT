@@ -228,6 +228,7 @@ def post_sample(
     metadata: dict[str, Any],
     image: bytes,
     *,
+    token: str | None = None,
     timeout: float = 10.0,
 ) -> tuple[int, dict[str, Any] | str]:
     """POST multipart (metadata JSON string + image JPEG) tới /api/ingest.
@@ -241,7 +242,10 @@ def post_sample(
     data = {
         "metadata": json.dumps(metadata, ensure_ascii=False),
     }
-    resp = requests.post(url, files=files, data=data, timeout=timeout)
+    headers = {}
+    if token:
+        headers["X-Ingest-Token"] = token
+    resp = requests.post(url, files=files, data=data, headers=headers, timeout=timeout)
     try:
         body: dict[str, Any] | str = resp.json()
     except ValueError:
@@ -322,6 +326,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--interval", type=float, default=2.0,
                    help="khoảng giây giữa 2 mẫu (mặc định: 2.0; <=0 thì gửi liên tục)")
     p.add_argument("--device-id", default="aquascope-mock", help="device_id (mặc định: aquascope-mock)")
+    p.add_argument("--token", default=None, help="mã token xác thực API ingest (nếu backend yêu cầu)")
     p.add_argument("--seed", type=int, default=None, help="seed cho random (mặc định: ngẫu nhiên, mỗi lần khác nhau)")
     p.add_argument("--self-test", action="store_true",
                    help="không gửi đi đâu — dựng http.server tối giản, bắn 1 mẫu vào để kiểm shape "
@@ -341,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
         now = datetime.now(VN_TZ)
         metadata, image = build_sample(rng, device_id=args.device_id, now=now)
         try:
-            status, body = post_sample(args.url, metadata, image)
+            status, body = post_sample(args.url, metadata, image, token=args.token)
         except requests.RequestException as e:
             print(f"[{i}/{args.count}] LỖI mạng: {e}")
             fail += 1

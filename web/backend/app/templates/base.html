@@ -35,7 +35,14 @@
 
     <nav class="nav">
       <a class="nav-link{{ ' active' if screen == 'dashboard' else '' }}" href="/">{{ icon('grid') }}<span>Bảng điều khiển</span></a>
+      <a class="nav-link{{ ' active' if screen == 'batches' else '' }}" href="/batches">{{ icon('box') }}<span>Lô sản xuất</span></a>
+      <a class="nav-link{{ ' active' if screen == 'devices' else '' }}" href="/devices">{{ icon('cpu') }}<span>Thiết bị</span></a>
       <a class="nav-link{{ ' active' if screen == 'history' else '' }}" href="/history">{{ icon('list') }}<span>Lịch sử · audit</span></a>
+      <a class="nav-link{{ ' active' if screen == 'notifications' else '' }}" href="/notifications">{{ icon('bell') }}<span>Cảnh báo</span></a>
+      {% if request.state.user is defined and request.state.user.role == 'admin' %}
+      <div class="nav-divider"></div>
+      <a class="nav-link{{ ' active' if screen == 'settings' else '' }}" href="/settings">{{ icon('settings') }}<span>Cài đặt</span></a>
+      {% endif %}
       <a class="nav-link{{ ' active' if screen == 'stream' else '' }}" href="/stream">{{ icon('wave') }}<span>Stream demo</span></a>
     </nav>
 
@@ -50,6 +57,10 @@
       <h1 class="header-title">{{ title }}</h1>
       <span class="lan-chip"><span class="lan-chip-dot"></span>LAN · demo</span>
       <div class="spacer"></div>
+      {% if request.state.user is defined %}
+      <span class="lan-chip">{{ request.state.user.username }} · {{ request.state.user.role }}</span>
+      <form method="post" action="/logout"><button class="btn btn-ghost" type="submit">Logout</button></form>
+      {% endif %}
       <button id="theme-toggle" class="btn-icon" aria-label="Đổi giao diện sáng/tối" type="button">{{ icon('moon') }}</button>
       <a class="btn btn-primary" href="/api/export.csv">{{ icon('download') }}<span>Xuất CSV</span></a>
     </header>
@@ -58,7 +69,13 @@
        into this scrollable strip so navigation is never lost on phones. #}
     <nav class="mobile-nav aq-scroll" aria-label="Điều hướng chính">
       <a class="mnav-link{{ ' active' if screen == 'dashboard' else '' }}" href="/">{{ icon('grid') }}<span>Bảng điều khiển</span></a>
+      <a class="mnav-link{{ ' active' if screen == 'batches' else '' }}" href="/batches">{{ icon('box') }}<span>Lô sản xuất</span></a>
+      <a class="mnav-link{{ ' active' if screen == 'devices' else '' }}" href="/devices">{{ icon('cpu') }}<span>Thiết bị</span></a>
       <a class="mnav-link{{ ' active' if screen == 'history' else '' }}" href="/history">{{ icon('list') }}<span>Lịch sử · audit</span></a>
+      <a class="mnav-link{{ ' active' if screen == 'notifications' else '' }}" href="/notifications">{{ icon('bell') }}<span>Cảnh báo</span></a>
+      {% if request.state.user is defined and request.state.user.role == 'admin' %}
+      <a class="mnav-link{{ ' active' if screen == 'settings' else '' }}" href="/settings">{{ icon('settings') }}<span>Cài đặt</span></a>
+      {% endif %}
       <a class="mnav-link{{ ' active' if screen == 'stream' else '' }}" href="/stream">{{ icon('wave') }}<span>Stream demo</span></a>
     </nav>
 

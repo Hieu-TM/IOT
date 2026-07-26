@@ -26,16 +26,18 @@ import math
 from datetime import date, datetime, time, timezone
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Query, Request, Form, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlmodel import Session, select
 
 from .. import config
 from ..database import get_session
-from ..models import Particle, Sample
-from .samples import BIN_WIDTH_MM, _apply_filters, _build_histogram
+from ..models import Notification, Particle, Sample, QcSetting, User
+from .samples import BIN_WIDTH_MM, UNASSIGNED_BATCH_LOT, _apply_filters, _build_histogram
+from ..qc_helpers import get_warn_particle_count
+from ..auth import require_admin, get_current_user
 
 router = APIRouter(tags=["pages"])
 
@@ -58,8 +60,6 @@ LABEL_VI = {
     "organic": "Hữu cơ",
 }
 
-HISTORY_PAGE_SIZE = 10
-
 
 def _label_vi(label: str) -> str:
     return LABEL_VI.get(label, label)
@@ -70,8 +70,8 @@ def _label_color(label: str) -> str:
     return f"var(--p-{label})" if label in LABEL_VI else "var(--p-unknown)"
 
 
-def _is_warn(particle_count: int) -> bool:
-    return particle_count > config.WARN_PARTICLE_COUNT
+def _is_warn(particle_count: int, threshold: int) -> bool:
+    return particle_count > threshold
 
 
 # --- datetime → local, formatted -----------------------------------------
@@ -227,19 +227,21 @@ def _label_distribution(particles: List[Particle]) -> Dict[str, int]:
 
 def _dist_chips(dist: Dict[str, int]) -> List[dict]:
     """Ordered colored count-chips for a sample's label distribution."""
-    chips = []
-    for label in LABEL_ORDER:
-        if dist.get(label):
-            chips.append(
-                {"vi": _label_vi(label), "color": _label_color(label), "count": dist[label]}
-            )
-    # Any classifier label outside the canonical order still shows up.
-    for label, count in dist.items():
-        if label not in LABEL_ORDER and count:
-            chips.append(
-                {"vi": _label_vi(label), "color": _label_color(label), "count": count}
-            )
-    return chips
+    return [
+        {"vi": _label_vi(label), "color": _label_color(label), "count": dist[label]}
+        for label in _ordered_labels(dist)
+    ]
+
+
+def _ordered_labels(dist: Dict[str, int]) -> List[str]:
+    """Canonical labels first, then every non-canonical label present in data."""
+    labels = [label for label in LABEL_ORDER if dist.get(label)]
+    labels.extend(
+        label
+        for label in sorted(dist)
+        if label not in LABEL_ORDER and dist.get(label)
+    )
+    return labels
 
 
 # --- pages ----------------------------------------------------------------
@@ -248,10 +250,27 @@ def _dist_chips(dist: Dict[str, int]) -> List[dict]:
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, session: Session = Depends(get_session)):
     today = datetime.now().astimezone().date()
+    threshold = get_warn_particle_count(session)
 
     all_samples = session.exec(
         select(Sample).order_by(Sample.captured_at.desc(), Sample.id.desc())
     ).all()
+    notifications = session.exec(
+        select(Notification)
+        .where(Notification.acknowledged_at == None)
+        .order_by(Notification.created_at.desc(), Notification.id.desc())
+        .limit(8)
+    ).all()
+    notification_rows = [
+        {
+            "id": item.id,
+            "lot": item.batch_lot or "Unassigned batch lot",
+            "message": item.message,
+            "time": _fmt_dt(item.created_at),
+            "sample_id": item.sample_id,
+        }
+        for item in notifications
+    ]
 
     if not all_samples:
         return templates.TemplateResponse(
@@ -280,7 +299,7 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
     if today_dist:
         dominant_label, dominant_count = max(today_dist.items(), key=lambda kv: kv[1])
     dominant_pct = round(dominant_count / today_total * 100) if today_total else 0
-    warn_count = sum(1 for s in today_samples if _is_warn(s.particle_count))
+    warn_count = sum(1 for s in today_samples if _is_warn(s.particle_count, threshold))
 
     metric_tiles = [
         {
@@ -309,30 +328,31 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
         {
             "label": "Cảnh báo",
             "value": warn_count,
-            "hint": "mẫu có ≥1 hạt" if warn_count else "không có",
+            "hint": f"mẫu có >{threshold} hạt" if warn_count else "không có",
             "icon": "warn",
             "value_class": "amber" if warn_count else "",
             "warn": bool(warn_count),
         },
     ]
 
+    today_labels = _ordered_labels(today_dist)
     donut_entries = [
         {"color": _label_color(l), "count": today_dist[l]}
-        for l in LABEL_ORDER
-        if today_dist.get(l)
+        for l in today_labels
     ]
+
     donut_legend = [
         {
             "vi": _label_vi(l),
             "color": _label_color(l),
             "pct": f"{round(today_dist[l] / today_total * 100)}%",
         }
-        for l in LABEL_ORDER
-        if today_dist.get(l)
+        for l in today_labels
     ]
 
     latest = all_samples[0]
     latest_particles = _sample_particles(session, latest.id)
+    latest_image_available = (config.IMAGES_DIR / f"{latest.sample_code}.jpg").is_file()
 
     recent5 = [
         {
@@ -341,7 +361,7 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
             "lot": s.batch_lot or "—",
             "time": _fmt_dt(s.captured_at),
             "count": s.particle_count,
-            "warn": _is_warn(s.particle_count),
+            "warn": _is_warn(s.particle_count, threshold),
         }
         for s in today_samples[:5]
     ]
@@ -360,15 +380,182 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
             "lot": latest.batch_lot or "—",
             "time": _fmt_dt(latest.captured_at),
             "count": latest.particle_count,
-            "warn": _is_warn(latest.particle_count),
+            "warn": _is_warn(latest.particle_count, threshold),
             "image_url": "/" + latest.image_path.lstrip("/"),
+            "image_available": latest_image_available,
             "image_width": latest.image_width or 640,
             "image_height": latest.image_height or 480,
             "particles_json": _json_for_script(_overlay_particles(latest_particles)),
         },
         "recent5": recent5,
+        "notifications": notification_rows,
     }
     return templates.TemplateResponse(request, "index.html", ctx)
+
+
+@router.get("/batches", response_class=HTMLResponse)
+def batches(request: Request, session: Session = Depends(get_session)):
+    """Batch summary page — aggregates samples by batch_lot."""
+    from collections import defaultdict
+    from urllib.parse import urlencode
+    threshold = get_warn_particle_count(session)
+
+    all_samples = session.exec(
+        select(Sample).order_by(Sample.captured_at.desc(), Sample.id.desc())
+    ).all()
+
+    if not all_samples:
+        return templates.TemplateResponse(
+            request,
+            "batches.html",
+            {"screen": "batches", "title": "Lô sản xuất", "empty": True,
+             "batches": [], "total_batches": 0},
+        )
+
+    # Group samples by batch_lot
+    lots: dict = defaultdict(list)
+    for s in all_samples:
+        lots[s.batch_lot].append(s)
+
+    # Get label distribution across all samples (one query)
+    sample_ids = [s.id for s in all_samples]
+    label_rows = session.exec(
+        select(Particle.sample_id, Particle.label, func.count(Particle.id))
+        .where(Particle.sample_id.in_(sample_ids))
+        .group_by(Particle.sample_id, Particle.label)
+    ).all()
+    # Build: lot -> {label: count}
+    sample_to_lot = {s.id: s.batch_lot for s in all_samples}
+    lot_labels: dict = defaultdict(lambda: defaultdict(int))
+    for sid, label, count in label_rows:
+        lot_key = sample_to_lot.get(sid)
+        lot_labels[lot_key][label] += count
+
+    batch_rows = []
+    for lot_key, samples_in_lot in lots.items():
+        sample_count = len(samples_in_lot)
+        total_particles = sum(s.particle_count for s in samples_in_lot)
+        warn_count = sum(1 for s in samples_in_lot if _is_warn(s.particle_count, threshold))
+        first_dt = min(s.captured_at for s in samples_in_lot)
+        last_dt = max(s.captured_at for s in samples_in_lot)
+
+        dist = lot_labels.get(lot_key, {})
+        dominant_label = ""
+        dominant_count = 0
+        if dist:
+            dominant_label, dominant_count = max(dist.items(), key=lambda kv: kv[1])
+        total_label_count = sum(dist.values())
+        dominant_pct = round(dominant_count / total_label_count * 100) if total_label_count else 0
+
+        qs = "?" + urlencode(
+            {"batch_lot": lot_key if lot_key else UNASSIGNED_BATCH_LOT}
+        )
+        batch_rows.append({
+            "lot_key": lot_key,
+            "lot_display": lot_key or "Chưa gán lô",
+            "sample_count": sample_count,
+            "total_particles": total_particles,
+            "warn_count": warn_count,
+            "dominant_label": dominant_label,
+            "dominant_vi": _label_vi(dominant_label) if dominant_label else "",
+            "dominant_color": _label_color(dominant_label) if dominant_label else "",
+            "dominant_pct": dominant_pct,
+            "first_time": _fmt_dt(first_dt),
+            "last_time": _fmt_dt(last_dt),
+            "history_qs": qs,
+        })
+
+    # Sort: lots with warnings first, then alphabetically
+    batch_rows.sort(key=lambda b: (-b["warn_count"], b["lot_display"]))
+
+    ctx = {
+        "screen": "batches",
+        "title": "Lô sản xuất",
+        "empty": False,
+        "batches": batch_rows,
+        "total_batches": len(batch_rows),
+    }
+    return templates.TemplateResponse(request, "batches.html", ctx)
+
+
+@router.get("/devices", response_class=HTMLResponse)
+def devices(request: Request, session: Session = Depends(get_session)):
+    """Device status page — details for each active device/station."""
+    today = datetime.now().astimezone().date()
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    threshold = get_warn_particle_count(session)
+
+    all_samples = session.exec(
+        select(Sample).order_by(Sample.captured_at.desc(), Sample.id.desc())
+    ).all()
+
+    if not all_samples:
+        return templates.TemplateResponse(
+            request,
+            "devices.html",
+            {"screen": "devices", "title": "Thiết bị", "empty": True, "devices": []},
+        )
+
+    # Group samples by device_id
+    from collections import defaultdict
+    device_samples = defaultdict(list)
+    for s in all_samples:
+        device_samples[s.device_id].append(s)
+
+    device_rows = []
+    for dev_id, samples in device_samples.items():
+        latest_sample = samples[0] # ordered descending
+        
+        # Today's samples for this device
+        today_dev_samples = [s for s in samples if _local(s.captured_at).date() == today]
+        today_count = len(today_dev_samples)
+        today_warn_count = sum(1 for s in today_dev_samples if _is_warn(s.particle_count, threshold))
+        
+        # Calculate delay
+        delay_seconds = (latest_sample.received_at - latest_sample.captured_at).total_seconds()
+        # format delay nicely
+        if delay_seconds < 60:
+            delay_str = f"{int(max(0, delay_seconds))}s"
+        else:
+            delay_str = f"{int(delay_seconds // 60)}m {int(delay_seconds % 60)}s"
+
+        # Determine status
+        diff_minutes = (now_utc - latest_sample.captured_at).total_seconds() / 60.0
+        
+        if diff_minutes <= config.DEVICE_ONLINE_WINDOW_MINUTES:
+            status = "online"
+            status_vi = "Trực tuyến"
+        elif _local(latest_sample.captured_at).date() == today:
+            status = "idle"
+            status_vi = "Chờ"
+        else:
+            status = "offline"
+            status_vi = "Ngoại tuyến"
+
+        device_rows.append({
+            "device_id": dev_id,
+            "latest_code": latest_sample.sample_code,
+            "latest_sample_id": latest_sample.id,
+            "captured_at": _fmt_dt(latest_sample.captured_at),
+            "received_at": _fmt_dt(latest_sample.received_at),
+            "delay_str": delay_str,
+            "today_count": today_count,
+            "today_warn_count": today_warn_count,
+            "status": status,
+            "status_vi": status_vi,
+        })
+
+    # Sort: online first, then idle, then offline
+    status_order = {"online": 0, "idle": 1, "offline": 2}
+    device_rows.sort(key=lambda d: (status_order[d["status"]], d["device_id"]))
+
+    ctx = {
+        "screen": "devices",
+        "title": "Thiết bị",
+        "empty": False,
+        "devices": device_rows,
+    }
+    return templates.TemplateResponse(request, "devices.html", ctx)
 
 
 @router.get("/history", response_class=HTMLResponse)
@@ -379,24 +566,25 @@ def history(
     batch_lot: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None, alias="from"),
     date_to: Optional[str] = Query(None, alias="to"),
+    q: Optional[str] = Query(None),
 ):
     # Date inputs are yyyy-mm-dd (local). Turn them into a local-aware
     # [start-of-day, end-of-day] range so _apply_filters converts to UTC.
     from_dt = _parse_local_day(date_from, end=False)
     to_dt = _parse_local_day(date_to, end=True)
     lot = batch_lot or None
+    threshold = get_warn_particle_count(session)
 
     total = session.exec(
-        _apply_filters(select(func.count(Sample.id)), lot, from_dt, to_dt)
+        _apply_filters(select(func.count(Sample.id)), lot, from_dt, to_dt, q)
     ).one()
-    total_pages = max(1, math.ceil(total / HISTORY_PAGE_SIZE))
-    page = min(page, total_pages)
-
+    # The audit view is the complete traceability record: never truncate it to
+    # a dashboard-sized subset. Filters still narrow the exported/displayed set.
+    page = 1
+    total_pages = 1
     samples = session.exec(
-        _apply_filters(select(Sample), lot, from_dt, to_dt)
+        _apply_filters(select(Sample), lot, from_dt, to_dt, q)
         .order_by(Sample.captured_at.desc(), Sample.id.desc())
-        .offset((page - 1) * HISTORY_PAGE_SIZE)
-        .limit(HISTORY_PAGE_SIZE)
     ).all()
 
     # Label distributions for just this page's samples (one grouped query).
@@ -419,7 +607,7 @@ def history(
             "time": _fmt_dt(s.captured_at),
             "count": s.particle_count,
             "dist": _dist_chips(dist_by_sample.get(s.id, {})),
-            "warn": _is_warn(s.particle_count),
+            "warn": _is_warn(s.particle_count, threshold),
         }
         for s in samples
     ]
@@ -432,12 +620,18 @@ def history(
     ).all()
 
     # Preserve the active filter on the CSV-export link + pagination links.
-    export_qs = _query_string({"batch_lot": lot, "from": date_from, "to": date_to})
+    export_qs = _query_string({"batch_lot": lot, "from": date_from, "to": date_to, "q": q})
 
     ctx = {
         "screen": "history",
         "title": "Lịch sử · audit",
-        "filters": {"from": date_from or "", "to": date_to or "", "lot": lot or ""},
+        "filters": {
+            "from": date_from or "",
+            "to": date_to or "",
+            "lot": lot or "",
+            "q": q or "",
+            "unassigned_lot": UNASSIGNED_BATCH_LOT,
+        },
         "lot_options": lot_values,
         "rows": page_rows,
         "total": total,
@@ -446,10 +640,10 @@ def history(
         "summary": f"{total} mẫu khớp bộ lọc · trang {page}/{total_pages}",
         "export_qs": export_qs,
         "prev_qs": _query_string(
-            {"batch_lot": lot, "from": date_from, "to": date_to, "page": page - 1}
+            {"batch_lot": lot, "from": date_from, "to": date_to, "q": q, "page": page - 1}
         ),
         "next_qs": _query_string(
-            {"batch_lot": lot, "from": date_from, "to": date_to, "page": page + 1}
+            {"batch_lot": lot, "from": date_from, "to": date_to, "q": q, "page": page + 1}
         ),
         "has_prev": page > 1,
         "has_next": page < total_pages,
@@ -472,9 +666,11 @@ def sample_detail(
         )
 
     particles = _sample_particles(session, sample_id)
+    image_available = (config.IMAGES_DIR / f"{sample.sample_code}.jpg").is_file()
     dist = _label_distribution(particles)
     total = len(particles)
     size_histogram = _build_histogram(particles)
+    threshold = get_warn_particle_count(session)
 
     meta = [
         {"k": "Mã lô", "v": sample.batch_lot or "—", "mono": True},
@@ -509,6 +705,7 @@ def sample_detail(
         for idx, p in enumerate(particles)
     ]
 
+    sample_labels = _ordered_labels(dist)
     label_rows = [
         {
             "vi": _label_vi(l),
@@ -516,13 +713,11 @@ def sample_detail(
             "count": dist[l],
             "pct": f"{round(dist[l] / total * 100)}%" if total else "0%",
         }
-        for l in LABEL_ORDER
-        if dist.get(l)
+        for l in sample_labels
     ]
     legend = [
         {"vi": _label_vi(l), "color": _label_color(l)}
-        for l in LABEL_ORDER
-        if dist.get(l)
+        for l in sample_labels
     ]
 
     ctx = {
@@ -532,13 +727,12 @@ def sample_detail(
         "sample": {
             "id": sample.id,
             "code": sample.sample_code,
-            "warn": _is_warn(sample.particle_count),
+            "warn": _is_warn(sample.particle_count, threshold),
             "image_url": "/" + sample.image_path.lstrip("/"),
+            "image_available": image_available,
             "image_width": sample.image_width or 640,
             "image_height": sample.image_height or 480,
-            "dim_label": f"{sample.image_width}×{sample.image_height} px"
-            if sample.image_width
-            else "",
+            "dim_label": f"{sample.image_width}×{sample.image_height} px" if sample.image_width else "",
         },
         "count": total,
         "meta": meta,
@@ -552,12 +746,164 @@ def sample_detail(
     return templates.TemplateResponse(request, "sample_detail.html", ctx)
 
 
+@router.get("/settings", response_class=HTMLResponse)
+def settings_page(
+    request: Request,
+    session: Session = Depends(get_session),
+    admin_user: User = Depends(require_admin),
+):
+    """Admin-only settings page."""
+    threshold = get_warn_particle_count(session)
+    ctx = {
+        "screen": "settings",
+        "title": "Cài đặt hệ thống",
+        "warn_particle_count": threshold,
+    }
+    return templates.TemplateResponse(request, "settings.html", ctx)
+
+
+@router.post("/settings/qc")
+def update_qc_settings(
+    request: Request,
+    warn_particle_count: int = Form(...),
+    session: Session = Depends(get_session),
+    admin_user: User = Depends(require_admin),
+):
+    """Update QC threshold setting in the database."""
+    if warn_particle_count < 0:
+        raise HTTPException(status_code=422, detail="warn_particle_count must be >= 0")
+    # Find existing or create new setting
+    setting = session.exec(
+        select(QcSetting).where(QcSetting.key == "warn_particle_count")
+    ).first()
+    if setting is None:
+        setting = QcSetting(
+            key="warn_particle_count",
+            value=str(warn_particle_count),
+            updated_by=admin_user.id
+        )
+        session.add(setting)
+    else:
+        setting.value = str(warn_particle_count)
+        setting.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        setting.updated_by = admin_user.id
+        session.add(setting)
+    session.commit()
+    # Redirect back to settings page
+    return RedirectResponse("/settings", status_code=303)
+
+
+@router.get("/notifications", response_class=HTMLResponse)
+def notifications_page(
+    request: Request,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """View active and historical notifications."""
+    # Active/unacknowledged
+    active_notices = session.exec(
+        select(Notification)
+        .where(Notification.acknowledged_at == None)
+        .order_by(Notification.created_at.desc(), Notification.id.desc())
+    ).all()
+
+    # Resolved/acknowledged (joined with User to display who acknowledged it)
+    resolved_notices = session.exec(
+        select(Notification)
+        .where(Notification.acknowledged_at != None)
+        .order_by(Notification.acknowledged_at.desc(), Notification.id.desc())
+    ).all()
+
+    # Fetch users in resolved notices to avoid query-in-loop
+    user_ids = {n.acknowledged_by for n in resolved_notices if n.acknowledged_by is not None}
+    users_dict = {}
+    if user_ids:
+        users = session.exec(select(User).where(User.id.in_(list(user_ids)))).all()
+        users_dict = {u.id: u.username for u in users}
+
+    active_rows = [
+        {
+            "id": n.id,
+            "lot": n.batch_lot or "—",
+            "message": n.message,
+            "time": _fmt_dt(n.created_at),
+            "sample_id": n.sample_id,
+        }
+        for n in active_notices
+    ]
+
+    resolved_rows = [
+        {
+            "id": n.id,
+            "lot": n.batch_lot or "—",
+            "message": n.message,
+            "time": _fmt_dt(n.created_at),
+            "sample_id": n.sample_id,
+            "ack_by": users_dict.get(n.acknowledged_by, "—"),
+            "ack_at": _fmt_dt(n.acknowledged_at) if n.acknowledged_at else "—",
+            "ack_note": n.acknowledgement_note or "",
+        }
+        for n in resolved_notices
+    ]
+
+    ctx = {
+        "screen": "notifications",
+        "title": "Cảnh báo",
+        "active": active_rows,
+        "resolved": resolved_rows,
+    }
+    return templates.TemplateResponse(request, "notifications.html", ctx)
+
+
+@router.post("/notifications/{id}/ack")
+def acknowledge_notification(
+    id: int,
+    request: Request,
+    note: str = Form("", max_length=500),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark a notification as acknowledged."""
+    notice = session.get(Notification, id)
+    if notice is None:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    
+    if notice.acknowledged_at is None:
+        notice.acknowledged_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        notice.acknowledged_by = current_user.id
+        notice.acknowledgement_note = note.strip() or None
+        session.add(notice)
+        session.commit()
+    
+    # Redirect back to request's referrer (often dashboard or /notifications)
+    referrer = _safe_local_redirect(request.headers.get("referer"), request)
+    return RedirectResponse(referrer, status_code=303)
+
+
 @router.get("/stream", response_class=HTMLResponse)
 def stream(request: Request):
     # Pure-frontend demo — no DB access, no new endpoint (frontend design §2.4).
     return templates.TemplateResponse(
         request, "stream.html", {"screen": "stream", "title": "Stream demo"}
     )
+
+
+def _safe_local_redirect(referrer: Optional[str], request: Request) -> str:
+    """Return an internal redirect target; reject external/malformed referrers."""
+    if not referrer:
+        return "/notifications"
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(referrer)
+    if parts.netloc:
+        request_netloc = request.url.netloc
+        if parts.scheme in {"http", "https"} and parts.netloc == request_netloc:
+            target = parts.path or "/"
+            return target + (f"?{parts.query}" if parts.query else "")
+        return "/notifications"
+    if parts.path.startswith("/") and not parts.path.startswith("//"):
+        return parts.path + (f"?{parts.query}" if parts.query else "")
+    return "/notifications"
 
 
 # --- small helpers --------------------------------------------------------

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page stack" style="gap:24px; max-width: 600px;">
+
+  <div class="card">
+    <div class="card-head">
+      <span class="card-title">Thiết lập ngưỡng chất lượng (QC)</span>
+    </div>
+    
+    <form class="card-pad stack" style="gap:20px" method="post" action="/settings/qc">
+      <div class="field">
+        <label style="font-weight: 500; font-size: 13.5px; color: var(--text);">Ngưỡng số lượng hạt cảnh báo</label>
+        <input type="number" name="warn_particle_count" min="0" value="{{ warn_particle_count }}" required style="width: 100%; max-width: 150px; margin-top: 6px;">
+        <span class="muted" style="font-size: 12px; margin-top: 4px; color: var(--text-3);">
+          Nếu một mẫu đo được số hạt lớn hơn ngưỡng này, mẫu đó sẽ được đánh dấu trạng thái "Cảnh báo" (màu hổ phách) và hệ thống sẽ phát sinh cảnh báo đỏ.
+        </span>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; border-top: 1px solid var(--border); padding-top: 16px; margin-top: 8px;">
+        <button class="btn btn-primary" type="submit">Lưu cài đặt</button>
+      </div>
+    </form>
+  </div>
+
+</div>
+{% endblock %}

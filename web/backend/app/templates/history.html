@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon, status_chip, empty_state, note %}
+{% from "_macros.html" import icon, status_chip, empty_state %}
 {% block content %}
 <div class="page stack" style="gap:16px">
 
@@ -13,10 +13,14 @@
     <label class="field">Mã lô
       <select name="batch_lot" onchange="this.form.submit()">
         <option value=""{{ ' selected' if not filters.lot else '' }}>Tất cả lô</option>
+        <option value="{{ filters.unassigned_lot }}"{{ ' selected' if filters.lot == filters.unassigned_lot else '' }}>Chưa gán lô</option>
         {% for lot in lot_options %}
         <option value="{{ lot }}"{{ ' selected' if filters.lot == lot else '' }}>{{ lot }}</option>
         {% endfor %}
       </select>
+    </label>
+    <label class="field">Tìm mã mẫu
+      <input type="text" name="q" placeholder="Tìm mã mẫu..." value="{{ filters.q }}" style="min-width:180px;">
     </label>
     <a class="btn-ghost" href="/history">Xoá lọc</a>
     <div class="spacer"></div>
@@ -63,17 +67,14 @@
     </table>
   </div>
 
+  {% if total_pages > 1 %}
   <div class="pager">
     <span class="pager-label">Trang {{ page }} / {{ total_pages }}</span>
     {% if has_prev %}<a class="btn btn-ghost" href="/history{{ prev_qs }}">‹ Trước</a>{% else %}<span class="btn btn-ghost" aria-disabled="true">‹ Trước</span>{% endif %}
     {% if has_next %}<a class="btn btn-ghost" href="/history{{ next_qs }}">Sau ›</a>{% else %}<span class="btn btn-ghost" aria-disabled="true">Sau ›</span>{% endif %}
   </div>
   {% endif %}
+  {% endif %}
 
-  {{ note([
-    'Dense rows với viền ngang mảnh, không bọc card từng dòng — tối ưu quét nhanh nhiều bản ghi audit.',
-    'Không có nút sửa/xoá ở bất kỳ đâu: dữ liệu append-only, backend cũng không có route PUT/PATCH/DELETE.',
-    'Nút "Xuất CSV" mang theo đúng bộ lọc đang chọn (khoảng ngày + mã lô). Mobile: bảng cuộn ngang trong khung riêng.',
-  ]) }}
 </div>
 {% endblock %}

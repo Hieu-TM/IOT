@@ -14,7 +14,7 @@ import json
 import secrets
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import JSONResponse
 from PIL import Image
 from pydantic import ValidationError
@@ -23,7 +23,8 @@ from sqlmodel import Session, select
 
 from .. import config
 from ..database import get_session
-from ..models import IngestPayload, Particle, Sample
+from ..models import IngestPayload, Notification, Particle, Sample
+from ..qc_helpers import get_warn_particle_count
 
 router = APIRouter(prefix="/api", tags=["ingest"])
 
@@ -53,10 +54,20 @@ def _already_exists_response(sample: Sample) -> JSONResponse:
 
 @router.post("/ingest")
 async def ingest(
+    request: Request,
     metadata: str = Form(...),
     image: UploadFile = File(...),
     session: Session = Depends(get_session),
 ):
+    # --- 0. Token Security Check -----------
+    if config.INGEST_TOKEN:
+        token = request.headers.get("X-Ingest-Token")
+        if not token:
+            auth_header = request.headers.get("Authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header[len("Bearer "):]
+        if token != config.INGEST_TOKEN:
+            raise HTTPException(status_code=401, detail="Unauthorized")
     # --- 1. Validate metadata JSON (§2.1: 422 on bad/missing) -----------
     try:
         raw = json.loads(metadata)
@@ -71,11 +82,6 @@ async def ingest(
     # Prefer the multipart-provided size (set by Starlette while parsing the
     # form, before this handler runs) so an oversized upload is rejected
     # without an extra full-body read into app memory.
-    # NOTE: this is a 413 *contract* (correct status code + no huge row/file
-    # written), not a DoS control — Starlette has already buffered the whole
-    # multipart body into memory before this handler ever runs. A real
-    # request-body-size cap belongs in ASGI middleware or the reverse proxy,
-    # in front of that buffering.
     if image.size is not None and image.size > config.MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="image exceeds upload size limit")
     contents = await image.read()
@@ -122,6 +128,21 @@ async def ingest(
         session.flush()  # assign sample.id without committing yet
         for p in payload.particles:
             session.add(Particle(sample_id=sample.id, **p.model_dump()))
+        
+        # QC warning threshold using get_warn_particle_count resolver
+        threshold = get_warn_particle_count(session)
+        if sample.particle_count > threshold:
+            lot = sample.batch_lot or "chưa gán mã lô"
+            session.add(
+                Notification(
+                    sample_id=sample.id,
+                    batch_lot=sample.batch_lot,
+                    message=(
+                        f"Lô {lot}: mẫu {sample.sample_code} không đạt QC "
+                        f"({sample.particle_count} hạt, ngưỡng {threshold})."
+                    ),
+                )
+            )
         session.commit()
     except IntegrityError:
         # Concurrent duplicate slipped past the pre-check — treat as retry.

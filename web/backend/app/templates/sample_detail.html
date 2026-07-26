@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon, status_chip, note %}
+{% from "_macros.html" import icon, status_chip %}
 {% block content %}
 {% if notfound %}
 <div class="page">
@@ -23,10 +23,17 @@
           <span class="hint-caption mono">{{ sample.dim_label }}</span>
         </div>
         <div style="padding:14px">
+          {% if sample.image_available %}
           <div class="bbox-figure" data-particles="det-parts" data-imgw="{{ sample.image_width }}" data-imgh="{{ sample.image_height }}" data-labels="1">
             <img src="{{ sample.image_url }}" alt="Ảnh backlit mẫu {{ sample.code }}, {{ count }} hạt">
             <div class="bbox-tip"></div>
           </div>
+          {% else %}
+          <div class="state-block" style="min-height:240px;padding:32px">
+            <div class="state-title">Ảnh gốc không còn tồn tại</div>
+            <p class="state-msg">Bản ghi audit vẫn được giữ nguyên, nhưng file ảnh backlit của mẫu này không có trong bộ lưu trữ hiện tại.</p>
+          </div>
+          {% endif %}
           <script type="application/json" id="det-parts">{{ particles_json|safe }}</script>
         </div>
         <div style="padding:0 14px 14px" class="legend-inline">
@@ -122,11 +129,11 @@
     </div>
   </div>
 
-  {{ note([
+  {# Removed design note:
     'Bố cục 2 cột: ảnh + overlay bbox cố định (sticky) khi cuộn để luôn tham chiếu được trong lúc đọc dữ liệu bên phải.',
     'Bảng hạt và ảnh liên kết hai chiều: di chuột lên hàng hoặc lên hạt đều tô đậm bbox tương ứng.',
     'Khối raw metadata JSON giữ bản ghi audit nguyên văn, mở rộng được. Mobile: ảnh lên trên, dữ liệu xuống dưới; bảng cuộn ngang trong khung riêng.',
-  ]) }}
+  #}
 </div>
 {% endif %}
 {% endblock %}

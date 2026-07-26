@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, status_chip, empty_state %}
+{% block content %}
+<div class="page stack" style="gap:16px">
+
+  {% if empty %}
+    {{ empty_state('Không có thiết bị', 'Chưa có mẫu nào được ghi nhận từ bất kỳ thiết bị nào. Chạy mock_sender.py để bắt đầu.') }}
+  {% else %}
+  <div class="result-summary">Trạng thái hoạt động của các trạm đo</div>
+
+  <div class="card table-wrap aq-scroll">
+    <table class="table" style="min-width:900px">
+      <thead>
+        <tr>
+          <th>Tên thiết bị (ID)</th>
+          <th>Trạng thái</th>
+          <th class="num">Mẫu hôm nay</th>
+          <th class="num">Cảnh báo hôm nay</th>
+          <th>Mẫu cuối cùng</th>
+          <th>Thời gian chụp cuối</th>
+          <th>Thời gian nhận cuối</th>
+          <th>Độ trễ upload</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in devices %}
+        <tr>
+          <td class="mono" style="font-weight:500">{{ d.device_id }}</td>
+          <td>
+            {% if d.status == 'online' %}
+            <span class="status-chip"><span class="dot"></span>Trực tuyến</span>
+            {% elif d.status == 'idle' %}
+            <span class="status-chip warn"><span class="dot"></span>Chờ</span>
+            {% else %}
+            <span class="status-chip" style="background: var(--surface-2); color: var(--text-2);"><span class="dot" style="background: var(--gray);"></span>Ngoại tuyến</span>
+            {% endif %}
+          </td>
+          <td class="num">{{ d.today_count }}</td>
+          <td class="num">
+            {% if d.today_warn_count > 0 %}
+            <span class="status-chip warn" style="font-weight:500"><span class="dot"></span>{{ d.today_warn_count }}</span>
+            {% else %}
+            <span class="status-chip" style="background: var(--surface-2); color: var(--text-2);"><span class="dot" style="background: var(--gray);"></span>0</span>
+            {% endif %}
+          </td>
+          <td class="mono"><a href="/samples/{{ d.latest_sample_id }}" class="link-cell">{{ d.latest_code }}</a></td>
+          <td class="muted">{{ d.captured_at }}</td>
+          <td class="muted">{{ d.received_at }}</td>
+          <td class="muted">{{ d.delay_str }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

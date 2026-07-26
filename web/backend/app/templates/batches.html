@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, status_chip, empty_state %}
+{% block content %}
+<div class="page stack" style="gap:16px">
+
+  {% if empty %}
+    {{ empty_state('Chưa có lô nào', 'Chưa có mẫu nào trong hệ thống. Chạy mock_sender.py để nạp dữ liệu demo.') }}
+  {% else %}
+  <div class="result-summary">{{ total_batches }} lô sản xuất</div>
+
+  <div class="card table-wrap aq-scroll">
+    <table class="table" style="min-width:900px">
+      <thead>
+        <tr>
+          <th>Mã lô</th>
+          <th class="num">Số mẫu</th>
+          <th class="num">Tổng hạt</th>
+          <th class="num">Cảnh báo</th>
+          <th>Loại nhiều nhất</th>
+          <th>Thời gian đầu</th>
+          <th>Thời gian cuối</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in batches %}
+        <tr>
+          <td class="mono" style="font-weight:500">{{ b.lot_display }}</td>
+          <td class="num">{{ b.sample_count }}</td>
+          <td class="num" style="font-weight:500">{{ b.total_particles }}</td>
+          <td class="num">
+            {% if b.warn_count > 0 %}
+            <span class="status-chip warn"><span class="dot"></span>{{ b.warn_count }}</span>
+            {% else %}
+            <span class="status-chip"><span class="dot"></span>0</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if b.dominant_label %}
+            <span class="dist-chip"><span class="swatch-xs" style="background:{{ b.dominant_color }}"></span>{{ b.dominant_vi }} · {{ b.dominant_pct }}%</span>
+            {% else %}
+            <span class="muted-dash">—</span>
+            {% endif %}
+          </td>
+          <td class="muted">{{ b.first_time }}</td>
+          <td class="muted">{{ b.last_time }}</td>
+          <td class="num"><a href="/history{{ b.history_qs }}" class="link-cell">Xem mẫu →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

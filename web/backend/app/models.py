@@ -14,6 +14,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, field_validator
 from pydantic import Field as PydanticField
+from sqlalchemy import BigInteger, Unicode, UnicodeText
 from sqlmodel import Field, Relationship, SQLModel
 
 # Allowlist for client-supplied sample_code: it becomes a filename verbatim
@@ -52,7 +53,7 @@ class Sample(SQLModel, table=True):
     image_height: Optional[int] = None
     px_per_mm: Optional[float] = None
     # Verbatim original metadata JSON — the real audit-proof record.
-    raw_metadata_json: str
+    raw_metadata_json: str = Field(sa_type=UnicodeText)
 
     particles: List["Particle"] = Relationship(back_populates="sample")
 
@@ -79,6 +80,48 @@ class Particle(SQLModel, table=True):
     confidence: float
 
     sample: Optional[Sample] = Relationship(back_populates="particles")
+
+
+class User(SQLModel, table=True):
+    """A dashboard account. Password hashes are never returned by routes."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(index=True, unique=True, max_length=64)
+    password_hash: str
+    role: str = Field(default="operator", max_length=16)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
+
+
+class Notification(SQLModel, table=True):
+    """Durable QC failure notice, linked one-to-one with its source sample."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    sample_id: int = Field(
+        foreign_key="sample.id", index=True, unique=True, sa_type=BigInteger
+    )
+    batch_lot: Optional[str] = Field(default=None, index=True, sa_type=Unicode(128))
+    message: str = Field(sa_type=UnicodeText)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
+    acknowledged_at: Optional[datetime] = Field(default=None)
+    acknowledged_by: Optional[int] = Field(default=None, foreign_key="user.id")
+    acknowledgement_note: Optional[str] = Field(default=None, sa_type=UnicodeText)
+
+
+class QcSetting(SQLModel, table=True):
+    """Configuration table for QC settings like particle count threshold."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    key: str = Field(index=True, unique=True, sa_type=Unicode(64))
+    value: str = Field(sa_type=Unicode(256))
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
+    updated_by: Optional[int] = Field(default=None, foreign_key="user.id")
+
 
 
 # --- API input validation (used by Module 2's ingest router) ------------

@@ -61,7 +61,7 @@ def _make_client(seed=True):
                 batch_lot="LOT-A",
                 device_id="aquascope-01",
                 captured_at=now,
-                particle_count=2,
+                particle_count=5,
                 image_path="images/S-PAGE-1.jpg",
                 image_width=640,
                 image_height=480,
@@ -73,7 +73,10 @@ def _make_client(seed=True):
             s.refresh(sample)
             parts = [
                 _mk_particle(0, 1.2, "plastic"),
-                _mk_particle(1, 2.4, XSS_LABEL),  # malicious free-form label
+                _mk_particle(1, 1.4, "bubble"),
+                _mk_particle(2, 1.6, "organic"),
+                _mk_particle(3, 1.8, "fiber"),
+                _mk_particle(4, 2.4, XSS_LABEL),  # malicious free-form label
             ]
             for p in parts:
                 p.sample_id = sample.id
@@ -88,7 +91,9 @@ def _make_client(seed=True):
             yield session
 
     app.dependency_overrides[get_session] = _override_get_session
-    return TestClient(app)
+    client = TestClient(app)
+    client._engine = engine
+    return client
 
 
 @pytest.fixture
@@ -107,6 +112,29 @@ def _first_sample_id(client):
     return int(m.group(1))
 
 
+def test_history_displays_every_matching_sample(client):
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    with Session(client._engine) as session:
+        for index in range(2, 13):
+            code = f"S-AUDIT-{index:02d}"
+            session.add(
+                Sample(
+                    sample_code=code,
+                    batch_lot="LOT-A",
+                    device_id="aquascope-01",
+                    captured_at=now,
+                    particle_count=0,
+                    image_path=f"images/{code}.jpg",
+                    raw_metadata_json=f'{{"sample_code":"{code}"}}',
+                )
+            )
+        session.commit()
+
+    html = client.get("/history").text
+    assert "S-PAGE-1" in html
+    assert "S-AUDIT-12" in html
+
+
 def test_all_pages_render_ok(client):
     for path in ["/", "/history", "/stream"]:
         r = client.get(path)
@@ -116,10 +144,32 @@ def test_all_pages_render_ok(client):
     assert client.get(f"/samples/{sid}").status_code == 200
 
 
+def test_dashboard_and_detail_include_legacy_label_distribution(client):
+    dashboard_html = client.get("/").text
+    assert "Nhựa" in dashboard_html
+    assert "Bọt khí" in dashboard_html
+    assert "Hữu cơ" in dashboard_html
+    assert "Sợi" in dashboard_html
+
+    sid = _first_sample_id(client)
+    detail_html = client.get(f"/samples/{sid}").text
+    assert "Nhựa" in detail_html
+    assert "Bọt khí" in detail_html
+    assert "Hữu cơ" in detail_html
+    assert "Sợi" in detail_html
+
+
 def test_missing_sample_returns_404(client):
     r = client.get("/samples/999999")
     assert r.status_code == 404
     assert "Không tìm thấy mẫu" in r.text
+
+
+def test_detail_replaces_a_missing_backlit_file_with_a_clear_message(client):
+    sid = _first_sample_id(client)
+    html = client.get(f"/samples/{sid}").text
+    assert "Ảnh gốc không còn tồn tại" in html
+    assert 'src="/images/S-PAGE-1.jpg"' not in html
 
 
 def test_empty_dashboard_renders_empty_state():
@@ -149,3 +199,68 @@ def test_mobile_nav_present_on_every_page(client):
         assert 'class="mnav-link' in html, path
         for href in ('href="/"', 'href="/history"', 'href="/stream"'):
             assert href in html, f"{path} missing {href}"
+
+
+def test_history_search(client):
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    with Session(client._engine) as session:
+        session.add(Sample(
+            sample_code="S-SEARCH-MATCH",
+            batch_lot="LOT-A",
+            device_id="aquascope-01",
+            captured_at=now,
+            particle_count=0,
+            image_path="images/S-SEARCH-MATCH.jpg",
+            raw_metadata_json='{}'
+        ))
+        session.add(Sample(
+            sample_code="S-OTHER-SAMPLE",
+            batch_lot="LOT-A",
+            device_id="aquascope-01",
+            captured_at=now,
+            particle_count=0,
+            image_path="images/S-OTHER-SAMPLE.jpg",
+            raw_metadata_json='{}'
+        ))
+        session.commit()
+
+    # Search for MATCH
+    r = client.get("/history?q=MATCH")
+    assert r.status_code == 200
+    assert "S-SEARCH-MATCH" in r.text
+    assert "S-OTHER-SAMPLE" not in r.text
+
+    # Search for OTHER
+    r = client.get("/history?q=OTHER")
+    assert r.status_code == 200
+    assert "S-OTHER-SAMPLE" in r.text
+    assert "S-SEARCH-MATCH" not in r.text
+
+
+def test_history_filters_unassigned_batch_lot(client):
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    with Session(client._engine) as session:
+        session.add(Sample(
+            sample_code="S-NO-LOT",
+            batch_lot=None,
+            device_id="aquascope-01",
+            captured_at=now,
+            particle_count=0,
+            image_path="images/S-NO-LOT.jpg",
+            raw_metadata_json='{}',
+        ))
+        session.add(Sample(
+            sample_code="S-WITH-LOT",
+            batch_lot="LOT-Z",
+            device_id="aquascope-01",
+            captured_at=now,
+            particle_count=0,
+            image_path="images/S-WITH-LOT.jpg",
+            raw_metadata_json='{}',
+        ))
+        session.commit()
+
+    r = client.get("/history?batch_lot=__unassigned__")
+    assert r.status_code == 200
+    assert "S-NO-LOT" in r.text
+    assert "S-WITH-LOT" not in r.text

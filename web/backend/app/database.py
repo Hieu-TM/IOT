@@ -8,21 +8,17 @@ or table registration would deadlock on a circular import.
 from sqlmodel import Session, SQLModel, create_engine
 
 from . import models  # noqa: F401 — registers Sample/Particle on metadata
-from .config import DATABASE_URL, DATA_DIR, IMAGES_DIR
+from .config import DATABASE_URL, IMAGES_DIR
 
-# check_same_thread=False: FastAPI may touch the session from a different
-# thread than the one that created it; safe here given SQLite single-writer
-# and the low, batched write rate of this station (§3).
 engine = create_engine(
     DATABASE_URL,
     echo=False,
-    connect_args={"check_same_thread": False},
+    pool_pre_ping=True,
 )
 
 
 def create_db_and_tables() -> None:
-    """Ensure the data dirs exist and both tables are created (idempotent)."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    """Ensure the image directory and SQL Server tables exist (idempotent)."""
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     SQLModel.metadata.create_all(engine)
 

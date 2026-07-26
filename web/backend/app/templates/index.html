@@ -1,10 +1,32 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon, status_chip, empty_state, note %}
+{% from "_macros.html" import icon, status_chip, empty_state %}
 {% block content %}
 {% if empty %}
   {{ empty_state('Chưa có mẫu nào', 'Chạy mock_sender.py để nạp dữ liệu demo, hoặc bật trạm aquascope-01 để bắt đầu ghi mẫu.') }}
 {% else %}
 <div class="page stack" style="gap:20px">
+
+  {% if notifications %}
+  <section class="card" aria-labelledby="notifications-title">
+    <div class="card-head">
+      <h2 id="notifications-title" class="card-title">QC notifications</h2>
+      <span class="status-chip warn"><span class="dot"></span>{{ notifications|length }} failed batch/sample records</span>
+    </div>
+    <div class="meta-list" style="padding:0 18px">
+      {% for notice in notifications %}
+      <div class="meta-row" style="display:flex; justify-content:space-between; align-items:center; padding:10px 0;">
+        <div style="display:flex; flex-direction:column; gap:2px;">
+          <span class="meta-k" style="font-size:11.5px; color:var(--text-3);">{{ notice.time }} · {{ notice.lot }}</span>
+          <a class="meta-v" href="/samples/{{ notice.sample_id }}" style="font-weight:500; text-decoration:none; color:var(--text);">{{ notice.message }}</a>
+        </div>
+        <form method="post" action="/notifications/{{ notice.id }}/ack" style="margin:0;">
+          <button class="btn btn-ghost" type="submit" style="padding: 4px 10px; font-size:12px; height:auto; border-radius:5px;">Xác nhận</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
 
   <div class="metric-grid">
     {% for m in metric_tiles %}
@@ -26,9 +48,15 @@
       </div>
       <div style="display:flex;gap:18px;padding:18px;flex-wrap:wrap">
         <div style="flex:1;min-width:240px">
+          {% if latest.image_available %}
           <div class="bbox-figure" data-particles="latest-parts" data-imgw="{{ latest.image_width }}" data-imgh="{{ latest.image_height }}" data-labels="0">
             <img src="{{ latest.image_url }}" alt="Ảnh backlit mẫu mới nhất, {{ latest.count }} hạt" loading="lazy">
           </div>
+          {% else %}
+          <div class="state-block" style="min-height:220px;padding:28px">
+            <div class="state-title">Ảnh gốc không còn tồn tại</div>
+          </div>
+          {% endif %}
           <script type="application/json" id="latest-parts">{{ latest.particles_json|safe }}</script>
         </div>
         <div style="flex:1;min-width:210px;align-self:center">
@@ -103,11 +131,11 @@
     </div>
   </section>
 
-  {{ note([
+  {# Removed design note:
     'Bố cục lưới module cân bằng: 4 metric tile ở trên cho tổng quan ca, hàng 2 cột (1.5fr / 1fr) đặt "mẫu mới nhất" cạnh "phân bố loại" để mắt đọc từ tổng quan → gần nhất → chi tiết.',
     'Thẻ Cảnh báo đổi nền amber khi >0 để nổi bật lúc trình chiếu từ xa; các tile khác giữ nền xám trung tính.',
     'Mobile (≤900px): lưới 2 cột gập thành 1 cột xếp dọc; bảng "5 mẫu gần nhất" cuộn ngang trong khung riêng, thân trang không cuộn ngang.',
-  ]) }}
+  #}
 </div>
 {% endif %}
 {% endblock %}

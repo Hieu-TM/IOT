@@ -27,6 +27,7 @@ from ..database import get_session
 from ..models import Particle, Sample
 
 router = APIRouter(prefix="/api", tags=["samples"])
+UNASSIGNED_BATCH_LOT = "__unassigned__"
 
 # Size histogram: fixed 0.3mm bins across the 0–5mm design range (CLAUDE.md).
 # Computed at read time (not stored) so bin size can change later without
@@ -125,16 +126,20 @@ def _to_naive_utc(dt: Optional[datetime]) -> Optional[datetime]:
     return dt.astimezone(timezone.utc).replace(tzinfo=None) if dt and dt.tzinfo else dt
 
 
-def _apply_filters(stmt, batch_lot, date_from, date_to):
+def _apply_filters(stmt, batch_lot, date_from, date_to, q=None):
     """Apply the batch_lot + captured_at range filters shared by list/export."""
     date_from = _to_naive_utc(date_from)
     date_to = _to_naive_utc(date_to)
-    if batch_lot is not None:
+    if batch_lot == UNASSIGNED_BATCH_LOT:
+        stmt = stmt.where(Sample.batch_lot.is_(None))
+    elif batch_lot is not None:
         stmt = stmt.where(Sample.batch_lot == batch_lot)
     if date_from is not None:
         stmt = stmt.where(Sample.captured_at >= date_from)
     if date_to is not None:
         stmt = stmt.where(Sample.captured_at <= date_to)
+    if q:
+        stmt = stmt.where(Sample.sample_code.contains(q))
     return stmt
 
 
@@ -170,14 +175,15 @@ def list_samples(
     batch_lot: Optional[str] = Query(None),
     date_from: Optional[datetime] = Query(None, alias="from"),
     date_to: Optional[datetime] = Query(None, alias="to"),
+    q: Optional[str] = Query(None),
 ):
     """Paginated summary list, newest capture first (§2.2)."""
     total = session.exec(
-        _apply_filters(select(func.count(Sample.id)), batch_lot, date_from, date_to)
+        _apply_filters(select(func.count(Sample.id)), batch_lot, date_from, date_to, q)
     ).one()
 
     rows = session.exec(
-        _apply_filters(select(Sample), batch_lot, date_from, date_to)
+        _apply_filters(select(Sample), batch_lot, date_from, date_to, q)
         .order_by(Sample.captured_at.desc(), Sample.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -278,6 +284,7 @@ def export_csv(
     batch_lot: Optional[str] = Query(None),
     date_from: Optional[datetime] = Query(None, alias="from"),
     date_to: Optional[datetime] = Query(None, alias="to"),
+    q: Optional[str] = Query(None),
 ):
     """Audit export: one row per particle, plus one row for zero-particle
     samples so every matched sample is represented (§2.2, §5). Same filters as
@@ -288,7 +295,7 @@ def export_csv(
     sample.
     """
     samples = session.exec(
-        _apply_filters(select(Sample), batch_lot, date_from, date_to)
+        _apply_filters(select(Sample), batch_lot, date_from, date_to, q)
         .order_by(Sample.captured_at.asc(), Sample.id.asc())
     ).all()
 

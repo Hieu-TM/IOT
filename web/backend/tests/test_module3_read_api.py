@@ -123,6 +123,13 @@ def test_list_filter_by_batch_lot(client):
     assert body["items"][0]["sample_code"] == "S-001"
 
 
+def test_list_filter_by_unassigned_batch_lot(client):
+    r = client.get("/api/samples", params={"batch_lot": "__unassigned__"})
+    body = r.json()
+    assert body["total"] == 1
+    assert body["items"][0]["sample_code"] == "S-003"
+
+
 def test_list_filter_by_date_range(client):
     r = client.get("/api/samples", params={"from": "2026-07-11T00:00:00"})
     body = r.json()
@@ -187,6 +194,13 @@ def test_export_csv_respects_filter(client):
     lines = [ln for ln in r.text.splitlines() if ln.strip()]
     # header + 2 particles of S-001 only
     assert len(lines) == 1 + 2
+
+
+def test_export_csv_respects_unassigned_batch_filter(client):
+    r = client.get("/api/export.csv", params={"batch_lot": "__unassigned__"})
+    lines = [ln for ln in r.text.splitlines() if ln.strip()]
+    assert len(lines) == 1 + 1
+    assert "S-003" in lines[1]
 
 
 def test_export_csv_particle_query_count_is_constant(client):
