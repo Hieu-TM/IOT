@@ -7,7 +7,7 @@ from PIL import Image
 
 import ml.infer.cli as cli
 from ml.infer.detector import Detection, DetectionResult
-from ml.tests.test_source import _DEVICE_JSON, _FakeBoard, _jpeg_bytes
+from ml.tests.fake_board import DEVICE_JSON, FakeBoard, jpeg_bytes
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -469,8 +469,8 @@ def test_device_id_flag_wins_over_board_and_config(tmp_path, monkeypatch):
     posted = []
     _fake_post_recorder(monkeypatch, posted)
 
-    with _FakeBoard([("jpeg", _jpeg_bytes())],
-                    device_response=("json", _DEVICE_JSON)) as board:
+    with FakeBoard([("jpeg", jpeg_bytes())],
+                    device_response=("json", DEVICE_JSON)) as board:
         rc = cli.main(["--config", str(cfg_file), "--from-board", board.host,
                        "--device-id", "flag-device", "--px-per-mm", "10"])
 
@@ -486,14 +486,14 @@ def test_device_id_board_wins_over_config_when_flag_omitted(tmp_path, monkeypatc
     posted = []
     _fake_post_recorder(monkeypatch, posted)
 
-    with _FakeBoard([("jpeg", _jpeg_bytes())],
-                    device_response=("json", _DEVICE_JSON)) as board:
+    with FakeBoard([("jpeg", jpeg_bytes())],
+                    device_response=("json", DEVICE_JSON)) as board:
         rc = cli.main(["--config", str(cfg_file), "--from-board", board.host,
                        "--px-per-mm", "10"])
 
     assert rc == 0
     assert len(posted) == 1
-    assert posted[0]["device_id"] == _DEVICE_JSON["device_id"]
+    assert posted[0]["device_id"] == DEVICE_JSON["device_id"]
 
 
 def test_device_block_reaches_the_posted_payload(tmp_path, monkeypatch):
@@ -508,17 +508,17 @@ def test_device_block_reaches_the_posted_payload(tmp_path, monkeypatch):
     posted = []
     _fake_post_recorder(monkeypatch, posted)
 
-    with _FakeBoard([("jpeg", _jpeg_bytes())],
-                    device_response=("json", _DEVICE_JSON)) as board:
+    with FakeBoard([("jpeg", jpeg_bytes())],
+                    device_response=("json", DEVICE_JSON)) as board:
         rc = cli.main(["--from-board", board.host, "--px-per-mm", "10"])
 
     assert rc == 0
     assert len(posted) == 1
     device = posted[0].get("device")
     assert device is not None, "khối /device không tới được payload"
-    assert device["firmware"] == _DEVICE_JSON["firmware"]
-    assert device["camera"]["exposure"] == _DEVICE_JSON["camera"]["exposure"]
-    assert device["prefs_saved"] == _DEVICE_JSON["prefs_saved"]
+    assert device["firmware"] == DEVICE_JSON["firmware"]
+    assert device["camera"]["exposure"] == DEVICE_JSON["camera"]["exposure"]
+    assert device["prefs_saved"] == DEVICE_JSON["prefs_saved"]
 
 
 def test_device_block_absent_when_reading_a_folder(tmp_path, monkeypatch):
@@ -543,10 +543,10 @@ def test_device_id_falls_back_to_config_when_board_does_not_report_one(tmp_path,
     posted = []
     _fake_post_recorder(monkeypatch, posted)
 
-    device_json_without_id = dict(_DEVICE_JSON)
+    device_json_without_id = dict(DEVICE_JSON)
     del device_json_without_id["device_id"]
 
-    with _FakeBoard([("jpeg", _jpeg_bytes())],
+    with FakeBoard([("jpeg", jpeg_bytes())],
                     device_response=("json", device_json_without_id)) as board:
         rc = cli.main(["--config", str(cfg_file), "--from-board", board.host,
                        "--px-per-mm", "10"])
@@ -574,7 +574,7 @@ def test_all_frames_failing_from_board_reports_skipped_and_nonzero_exit(tmp_path
     posted = []
     _fake_post_recorder(monkeypatch, posted)
 
-    with _FakeBoard([("503", None)], device_response=("json", _DEVICE_JSON)) as board:
+    with FakeBoard([("503", None)], device_response=("json", DEVICE_JSON)) as board:
         rc = cli.main(["--config", str(cfg_file), "--from-board", board.host,
                        "--count", "3", "--px-per-mm", "10"])
     out = capsys.readouterr().out
@@ -630,8 +630,8 @@ def test_dry_run_with_from_board_makes_no_post_request(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cli, "post", fake_post)
 
-    with _FakeBoard([("jpeg", _jpeg_bytes())],
-                    device_response=("json", _DEVICE_JSON)) as board:
+    with FakeBoard([("jpeg", jpeg_bytes())],
+                    device_response=("json", DEVICE_JSON)) as board:
         rc = cli.main(["--config", str(cfg_file), "--from-board", board.host,
                        "--dry-run", "--px-per-mm", "10"])
 
