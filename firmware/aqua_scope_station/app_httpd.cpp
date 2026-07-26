@@ -437,6 +437,39 @@ static esp_err_t cmd_handler(httpd_req_t *req) {
   } else if (!strcmp(variable, "ae_level")) {
     res = s->set_ae_level(s, val);
   }
+  // --- Thêm cho Aqua Scope: preset buồng tối (backlit silhouette) -----------
+  // Port nguyên bộ thông số từ dataset_collector/firmware/app_httpd.cpp
+  // (`?var=darkmode`) — bản đã canh trên chính rig này, nên giữ y giá trị,
+  // đừng "làm tròn" lại.
+  //
+  // Vì sao là LỆNH chứ không phải mặc định lúc boot: mặc định dark làm ảnh tối
+  // và khó ngắm ngay khi cấp điện (đúng lý do bỏ nó khỏi aquaPrefsApplyDefaults).
+  // Nhưng canh tay lại 5 slider mỗi phiên cũng tệ ngang. Collector giải quyết
+  // bằng auto lúc boot + 1 lệnh bật preset khi cần đo — đây là lệnh đó.
+  //
+  // Thứ tự có ý nghĩa: TẮT AEC/AGC trước, rồi mới đặt exposure/gain thủ công.
+  // Làm ngược lại thì sensor ghi đè giá trị thủ công ở khung kế tiếp.
+  else if (!strcmp(variable, "darkmode")) {
+    s->set_gain_ctrl(s, 0);                   // AGC OFF — bật thì sensor tự kéo sáng, cháy nền trắng
+    s->set_exposure_ctrl(s, 0);               // AEC OFF — chuyển sang phơi sáng thủ công
+    s->set_aec2(s, 0);                        // AEC DSP OFF
+    s->set_agc_gain(s, 0);                    // gain 0 — ít nhiễu nhất
+    s->set_gainceiling(s, (gainceiling_t)0);  // trần gain thấp nhất (2X)
+    s->set_aec_value(s, 200);                 // phơi sáng thấp: nền sáng đều, không cháy trắng
+    s->set_brightness(s, 0);
+    s->set_contrast(s, 2);                    // tăng tương phản — hạt tối nổi trên nền sáng
+    s->set_saturation(s, -2);                 // gần grayscale, bớt nhiễu màu ở rìa hạt
+    s->set_whitebal(s, 1);                    // cân bằng trắng cho nền LED trắng
+    s->set_awb_gain(s, 1);
+    s->set_lenc(s, 1);                        // bù sáng rìa ống kính — nền đều hơn
+    s->set_bpc(s, 1);
+    s->set_wpc(s, 1);
+    s->set_raw_gma(s, 1);
+    s->set_dcw(s, 1);
+    s->set_special_effect(s, 0);              // giữ màu; đổi 2 nếu muốn grayscale hẳn
+    Serial.println("[cam] Da ap preset buong toi (backlit silhouette).");
+    res = 0;
+  }
   // --- Thêm cho Aqua Scope: ghi cứng / khôi phục cấu hình -------------------
   // `val` bị bỏ qua, chỉ cần có mặt cho đúng dạng /control?var=..&val=..
   // Chuỗi, không phải số: dùng `value` thô chứ không dùng `val` (đã qua atoi).
@@ -503,11 +536,20 @@ static esp_err_t cmd_handler(httpd_req_t *req) {
   }
 #endif
   else {
-    log_i("Unknown command: %s", variable);
-    res = -1;
+    // -2 (không phải -1) để phân biệt "không có lệnh này" với "giá trị ngoài
+    // miền" ở thông báo phía dưới. Hai lỗi này cần hai cách xử lý khác nhau:
+    // một là sai tên/sai firmware, một là sai tham số.
+    res = -2;
   }
 
   if (res < 0) {
+    // In ra Serial, KHÔNG dùng log_i(). Core Debug Level mặc định của Arduino
+    // IDE là None nên log_i() không in gì cả — hệ quả: người dùng chỉ thấy
+    // trang trắng "Server has encountered an unexpected error" và Serial im
+    // lặng tuyệt đối, không có đầu mối nào để lần. Serial.printf luôn in.
+    Serial.printf("[http][LOI] var=%s val=%s -> HTTP 500 (%s)\n", variable, value,
+                  res == -2 ? "khong co lenh nay"
+                            : "gia tri ngoai mien cho phep / sensor tu choi");
     return httpd_resp_send_500(req);
   }
 

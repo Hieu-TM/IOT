@@ -14,10 +14,14 @@
  *  dataset thì không phải nạp lại firmware.
  *
  *  Khác bản CameraWebServer gốc đúng 3 điểm:
- *    1) Ép mặc định BACKLIT (tắt AEC/AEC-DSP/AGC) — bản gốc để auto, nền sẽ
- *       cháy trắng và nuốt mất hạt.
- *    2) Mặc định UXGA 1600x1200 thay vì QVGA — hạt <2mm cần độ phân giải.
- *    3) Lưu cấu hình vào flash (aqua_prefs.*) — chỉnh 1 lần, dùng mãi.
+ *    1) Mặc định UXGA 1600x1200 thay vì QVGA — hạt <2mm cần độ phân giải.
+ *    2) Lưu cấu hình vào flash (aqua_prefs.*) — chỉnh 1 lần, dùng mãi.
+ *    3) Có điều khiển bơm L298N (aqua_pump.*) + /device để truy xuất nguồn gốc.
+ *
+ *  Phơi sáng mặc định để AUTO như bản gốc (ảnh sáng, ngắm được ngay). Cấu hình
+ *  backlit thật — tắt AEC/AEC-DSP/AGC + exposure thấp — là bước người vận hành
+ *  chủ động chỉnh qua web UI/serial rồi ?var=save TRƯỚC khi chụp khung phân
+ *  tích, không còn bị ép cứng lúc boot.
  *
  *  Cấu hình board trong Arduino IDE:
  *    - Board:     "AI Thinker ESP32-CAM"
@@ -81,6 +85,20 @@ const char *AP_PASS = AQUA_AP_PASS;  // >= 8 ký tự
 void startCameraServer();
 void setupLedFlash();
 
+// Tần số XCLK cấp cho OV2640.
+//
+// Bản gốc Espressif dùng 20MHz, nhưng 20MHz gây artifact ảnh (sọc, vỡ khối,
+// ngả màu) trên nhiều module OV2640 — lỗi này KHÔNG phụ thuộc độ phân giải:
+//   https://github.com/espressif/esp32-camera/issues/150
+// dataset_collector/firmware/firmware.ino:155 đã gặp đúng chuyện này và hạ
+// xuống 8MHz; đó là firmware chạy sạch trên chính board này, nên lấy luôn 8MHz
+// làm giá trị chuẩn ở đây.
+//
+// Đánh đổi: 8MHz → tốc độ khung thấp hơn 20MHz. Với trạm Stop-Flow thì KHÔNG
+// quan trọng — mỗi chu trình chỉ chụp 1 khung lúc nước đã lặng, chất lượng ảnh
+// mới là thứ đáng đổi. Đừng nâng lại lên 20MHz chỉ để stream mượt hơn.
+static const int CAM_XCLK_HZ = 8000000;
+
 static bool initCamera() {
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -101,7 +119,7 @@ static bool initCamera() {
   config.pin_sccb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
-  config.xclk_freq_hz = 20000000;
+  config.xclk_freq_hz = CAM_XCLK_HZ;
   config.pixel_format = PIXFORMAT_JPEG;
   config.frame_size = FRAMESIZE_UXGA;
   config.jpeg_quality = 10;
@@ -224,8 +242,9 @@ void setup() {
   // %lu + ép kiểu: getFreePsram() trả uint32_t (long unsigned trên ESP32), %d
   // là sai kiểu. printf lấy tham số theo đúng kiểu mà chuỗi định dạng khai báo,
   // nên đây là hành vi không xác định chứ không chỉ là cảnh báo của trình dịch.
-  Serial.printf("Sensor PID: 0x%x | PSRAM: %lu bytes\n", s->id.PID,
-                (unsigned long)ESP.getFreePsram());
+  Serial.printf("Sensor PID: 0x%x | PSRAM: %s (%lu bytes free) | XCLK: %d Hz\n",
+                s->id.PID, psramFound() ? "co" : "KHONG",
+                (unsigned long)ESP.getFreePsram(), CAM_XCLK_HZ);
 
   // Trần framesize mà bộ nhớ hiện có kham nổi - PHẢI khớp với nhánh đã chọn
   // trong initCamera() (UXGA/PSRAM hay SVGA/DRAM). Không truyền cái này vào
@@ -238,8 +257,16 @@ void setup() {
   if (aquaPrefsLoad(s, maxFramesize)) {
     Serial.println("Đã nạp cấu hình lưu trong flash.");
   } else {
-    Serial.println("Flash chưa có cấu hình — dùng mặc định backlit.");
+    Serial.println("Flash chưa có cấu hình — dùng mặc định auto exposure.");
   }
+
+  // In trạng thái phơi sáng CUỐI CÙNG (sau khi cấu hình lưu đã đè lên mặc
+  // định) — đúng thứ web UI sẽ hiển thị. Có dòng này thì "ảnh tối" phân biệt
+  // được ngay là do cấu hình đã lưu hay do mặc định, không phải mở UI ra đoán.
+  Serial.printf("Phoi sang: AEC=%s AEC-DSP=%s AGC=%s (aec_value=%u agc_gain=%u)\n",
+                s->status.aec ? "auto" : "TAT", s->status.aec2 ? "auto" : "TAT",
+                s->status.agc ? "auto" : "TAT", s->status.aec_value,
+                s->status.agc_gain);
 
 #if defined(LED_GPIO_NUM)
   setupLedFlash();

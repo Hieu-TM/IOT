@@ -24,8 +24,9 @@ truy xuất nguồn gốc. Firmware **không** đếm hạt, không lưu trữ, 
 | `GET /capture` | Một ảnh JPEG. Chụp lỗi → **503** kèm lý do |
 | `GET /device` | JSON danh tính + thiết lập camera (khối audit) |
 | `GET /status` | JSON cấu hình cho slider (bản gốc Espressif) |
+| `GET /control?var=darkmode&val=1` | **Bật preset buồng tối backlit** (tắt AEC/AEC-DSP/AGC, gain 0, exposure 200, contrast +2, …) — chạy trước khi chụp khung phân tích |
 | `GET /control?var=save&val=1` | Ghi cứng cấu hình camera + bơm vào flash |
-| `GET /control?var=reset&val=1` | Xóa cấu hình, về mặc định backlit + reset pump |
+| `GET /control?var=reset&val=1` | Xóa cấu hình đã lưu, về mặc định auto exposure (như bản gốc) + reset pump |
 | `GET /control?var=device_id&val=<tên>` | Đổi device_id (khớp `[A-Za-z0-9._-]`, 1–64 ký tự) |
 | `GET /control?var=pump_auto&val=1` | Bật chu trình Stop-Flow tự động |
 | `GET /control?var=pump_auto&val=0` | Tắt chu trình (ramp bơm xuống 0) |
@@ -96,17 +97,33 @@ rút IO0, reset. Mở Serial Monitor 115200 để lấy IP và `device_id`.
 
 ## Khác gì bản CameraWebServer gốc
 
-1. **Mặc định backlit** — tắt AEC / AEC-DSP / AGC, gain 0, exposure 100. Bản
-   gốc để auto, và auto-exposure sẽ kéo nền cháy trắng nuốt mất hạt.
-2. **Không bật đèn flash khi chụp.** Bản gốc bật GPIO4 150ms trước mỗi lần
+> **Phơi sáng mặc định: GIỐNG bản gốc (auto).** Bản trước ép tắt
+> AEC/AEC-DSP/AGC + exposure 100 ngay lúc boot và mỗi lần `?var=reset`, nên ảnh
+> mặc định tối và khó ngắm/chỉnh — đã bỏ. Cấp điện lần đầu là ảnh sáng bình
+> thường.
+>
+> Nhưng **canh sáng backlit vẫn bắt buộc trước khi chụp khung phân tích** —
+> chụp đo ở chế độ auto thì nền cháy trắng và nuốt mất hạt. Không phải kéo tay
+> từng slider: gọi **một lệnh**
+>
+> ```
+> curl "http://<ip>/control?var=darkmode&val=1"
+> ```
+>
+> (port từ `?var=darkmode` của `dataset_collector` — bộ thông số đã canh trên
+> chính rig này), tinh chỉnh thêm bằng slider Exposure nếu cần, rồi `?var=save`.
+> Đã `save` một lần thì các lần boot sau nạp lại đúng cấu hình đó, mặc định auto
+> không ghi đè. Muốn về lại auto: `?var=reset` (lưu ý reset xoá cả cấu hình bơm).
+
+1. **Không bật đèn flash khi chụp.** Bản gốc bật GPIO4 150ms trước mỗi lần
    chụp. Rig này chiếu sáng **từ dưới** — thêm đèn từ trên làm nhạt bóng hạt
    và tạo phản xạ trên mặt nước.
-3. **Mặc định UXGA 1600×1200** — hạt <2mm cần độ phân giải.
-4. **Lưu cấu hình vào flash** — `?var=save` / `?var=reset` (lưu cả camera lẫn bơm).
-5. **`/device`** — device_id sinh từ MAC + thiết lập camera + trạng thái bơm.
-6. **Chạy dài không chết** — tự nối lại WiFi, watchdog, chụp lỗi trả 503.
+2. **Mặc định UXGA 1600×1200** — hạt <2mm cần độ phân giải.
+3. **Lưu cấu hình vào flash** — `?var=save` / `?var=reset` (lưu cả camera lẫn bơm).
+4. **`/device`** — device_id sinh từ MAC + thiết lập camera + trạng thái bơm.
+5. **Chạy dài không chết** — tự nối lại WiFi, watchdog, chụp lỗi trả 503.
    `loop()` nghỉ 50ms mỗi vòng (thay vì 10×1s) để pump tick phản hồi kịp thời.
-7. **Điều khiển bơm L298N** — state machine Stop-Flow (FILLING/SETTLING/FLUSHING/
+6. **Điều khiển bơm L298N** — state machine Stop-Flow (FILLING/SETTLING/FLUSHING/
    COOLDOWN) với PWM ramp chống búa nước, điều khiển qua HTTP và Serial.
 
 ## Checklist nghiệm thu trên board thật
@@ -116,8 +133,15 @@ Chưa chạy đủ các mục này thì **chưa được nói firmware "chạy �
 - [ ] 1. Nạp xong, Serial 115200 in ra IP và `device_id = aqua-cam-xxxxxx`
 - [ ] 2. `curl http://<ip>/device` → JSON hợp lệ, `psram: true`, có object `pump`
 - [ ] 3. Mở `http://<ip>/` chỉnh slider → nền xám đều, hạt là bóng đen rõ
-- [ ] 4. `?var=save` → rút điện → cắm lại → `/device` báo `prefs_saved: true`
-      và đúng thông số camera + bơm vừa chỉnh
+- [ ] 3a. Cấp điện lần đầu (chưa từng `?var=save`) → mở `http://<ip>/` → ảnh
+      **sáng bình thường**, không phải mảng xám tối; slider AEC/AGC ở trạng thái ON
+- [ ] 3b. `?var=reset` khi đang ở cấu hình đã lưu → về đúng trạng thái auto ở
+      mục 3a (không quay lại mặc định dark cũ)
+- [ ] 3c. `?var=darkmode&val=1` → Serial in `[cam] Da ap preset buong toi`, ảnh
+      chuyển sang nền sáng đều + hạt là bóng đen; `?var=reset` → về lại auto
+- [ ] 4. Tắt AEC/AGC + chỉnh tay theo quy trình canh sáng backlit → `?var=save`
+      → rút điện → cắm lại → `/device` báo `prefs_saved: true` và đúng thông số
+      camera + bơm vừa chỉnh (mặc định auto **không** ghi đè)
 - [ ] 5. Tắt router 30 giây rồi bật lại → board tự nối lại, `/device` phản hồi,
       **không** cần bấm reset
 - [ ] 6. `python -m ml.infer --from-board <ip> --count 3 --dry-run` → 3 khung,

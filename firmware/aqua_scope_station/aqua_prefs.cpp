@@ -14,12 +14,38 @@ static const char *NVS_NS_PUMP = "aquapump";
 // vừa được sửa để tránh.
 static framesize_t g_maxFramesize = FRAMESIZE_UXGA;
 
-// --- Mặc định backlit silhouette --------------------------------------------
-// Nền sáng đều, hạt = bóng đen. Bản stock của Espressif để AUTO exposure, và đó
-// chính là lỗi kinh điển: AEC/AGC sẽ kéo nền cháy trắng và nuốt mất hạt, bất kể
-// đèn nền chỉnh thế nào (CLAUDE.md, mục "Lighting").
-static const int DEF_AEC_VALUE = 100;  // exposure thủ công, thấp = tối
-static const int DEF_AGC_GAIN = 0;     // backlit thì để 0
+// --- Mặc định lúc boot -------------------------------------------------------
+// Phơi sáng để AUTO (AEC/AEC-DSP/AGC nguyên trạng như esp_camera_init() đặt),
+// giống bản CameraWebServer gốc và giống firmware aqua_scope_cam — ảnh sáng,
+// ngắm/chỉnh được ngay khi cấp điện.
+//
+// Cấu hình backlit thật (tắt AEC/AGC + exposure thấp) KHÔNG còn là mặc định:
+// nó là việc người vận hành chủ động bật qua web UI/serial rồi `?var=save`
+// trước khi chụp khung phân tích — xem CLAUDE.md, mục "Lighting".
+//
+// DEF_AEC_VALUE / DEF_AGC_GAIN vì thế không còn được áp lúc boot, chỉ còn là
+// giá trị dự phòng cho aquaPrefsLoad() khi NVS thiếu key (đường phòng thủ).
+static const int DEF_AEC_VALUE = 100;
+static const int DEF_AGC_GAIN = 0;
+
+// Trạng thái auto-exposure NGUYÊN BẢN của sensor, chụp lại ở lần gọi
+// aquaPrefsApplyDefaults() đầu tiên (trong setup(), ngay sau esp_camera_init(),
+// lúc chưa ai kịp sửa gì).
+//
+// Vì sao phải chụp lại chứ không hard-code 1: giá trị auto mặc định là do bảng
+// register của driver quyết định và khác nhau giữa OV2640/OV3660 (nhất là
+// aec2/AEC-DSP). Chụp lại thì "mặc định" luôn đúng bằng trạng thái lúc cấp
+// điện của bản gốc, không cần biết bảng register đó ghi gì.
+//
+// Vì sao phải phục hồi: applyDefaults() KHÔNG chỉ chạy lúc boot mà còn từ
+// aquaPrefsReset() (/control?var=reset). Lúc đó sensor đang ở manual — do người
+// dùng vừa chỉnh, hoặc do aquaPrefsLoad() đã áp cấu hình dark đã lưu. "Không
+// set gì" ở đường đó = giữ nguyên manual, nên reset sẽ không trả về auto được
+// và phải rút điện mới thoát khỏi ảnh tối. Đó chính là lỗi của bản trước.
+static bool g_autoCaptured = false;
+static int  g_autoAec  = 1;
+static int  g_autoAec2 = 1;
+static int  g_autoAgc  = 1;
 static const int DEF_CONTRAST = 1;     // tách bóng hạt khỏi nền
 static const int DEF_BRIGHTNESS = 0;
 static const int DEF_QUALITY = 10;
@@ -43,22 +69,48 @@ void aquaPrefsApplyDefaults(sensor_t *s, framesize_t max_framesize) {
   if (s == nullptr) return;
   g_maxFramesize = max_framesize;
 
-  // Thứ tự có ý nghĩa: phải TẮT các vòng điều khiển tự động TRƯỚC, nếu không
-  // sensor sẽ ghi đè giá trị thủ công mình vừa đặt ngay ở khung hình kế tiếp.
-  s->set_exposure_ctrl(s, 0);  // AEC off
-  s->set_aec2(s, 0);           // AEC-DSP off
-  s->set_gain_ctrl(s, 0);      // AGC off
+  // Phơi sáng: trả về ĐÚNG trạng thái auto lúc cấp điện (xem g_auto* ở trên).
+  // Bản cũ ép cả 3 vòng tự động về 0 rồi đặt exposure thủ công thấp, nên mỗi lần
+  // boot và mỗi `?var=reset` đều ra ảnh tối, khó ngắm.
+  if (!g_autoCaptured) {
+    // Lần đầu (boot, ngay sau esp_camera_init): sensor còn nguyên bản — chỉ ghi
+    // nhớ, KHÔNG set lại, để không đụng gì vào đường boot của bản gốc.
+    g_autoAec  = s->status.aec;
+    g_autoAec2 = s->status.aec2;
+    g_autoAgc  = s->status.agc;
+    g_autoCaptured = true;
+  } else {
+    // Các lần sau (từ /control?var=reset): sensor có thể đang ở manual, phải
+    // ghi trả lại một cách tường minh.
+    s->set_exposure_ctrl(s, g_autoAec);
+    s->set_aec2(s, g_autoAec2);
+    s->set_gain_ctrl(s, g_autoAgc);
+  }
 
-  s->set_aec_value(s, DEF_AEC_VALUE);
-  s->set_agc_gain(s, DEF_AGC_GAIN);
   s->set_contrast(s, DEF_CONTRAST);
-  s->set_brightness(s, DEF_BRIGHTNESS);
   s->set_quality(s, DEF_QUALITY);
+
+  // Hiệu chỉnh riêng cho OV3660 — KHÔNG bỏ nhánh này.
+  // Board của dự án dùng OV3660 (không phải OV2640 như tên file board ghi). Raw
+  // của nó ra ảnh LẬT NGƯỢC và quá bão hoà, nhìn ngả xanh. Cả 3 firmware chạy
+  // tốt trong repo đều có đúng nhánh này (CameraWebServer.ino, aqua_scope_cam,
+  // dataset_collector); bản station thiếu nó nên ảnh mặc định bị xanh + ngược.
+  // Giá trị lấy y theo CameraWebServer gốc của Espressif.
+  bool isOv3660 = (s->id.PID == OV3660_PID);
+  if (isOv3660) {
+    s->set_brightness(s, 1);
+    s->set_saturation(s, -2);
+  } else {
+    s->set_brightness(s, DEF_BRIGHTNESS);
+  }
+
   // Tôn trọng trần bộ nhớ do initCamera() tính (SVGA/DRAM khi không có PSRAM)
   // - KHÔNG set thẳng DEF_FRAMESIZE (UXGA) như trước, việc đó xóa mất fallback.
   s->set_framesize(s, clampFramesize(DEF_FRAMESIZE, max_framesize));
   s->set_hmirror(s, DEF_HMIRROR);
-  s->set_vflip(s, DEF_VFLIP);
+  // vflip PHẢI set sau cùng và phải theo nhánh sensor: OV3660 cần 1 để ảnh đúng
+  // chiều. Đặt DEF_VFLIP (0) vô điều kiện ở đây sẽ xoá đúng cái vừa sửa ở trên.
+  s->set_vflip(s, isOv3660 ? 1 : DEF_VFLIP);
 }
 
 bool aquaPrefsLoad(sensor_t *s, framesize_t max_framesize) {
