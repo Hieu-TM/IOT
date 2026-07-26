@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, status_chip, empty_state, note %}
 {% block content %}
+{% include "_control_panel.html" %}
 {% if empty %}
   {{ empty_state('Chưa có mẫu nào', 'Chạy mock_sender.py để nạp dữ liệu demo, hoặc bật trạm aquascope-01 để bắt đầu ghi mẫu.') }}
 {% else %}
@@ -114,4 +115,5 @@
 
 {% block scripts %}
 <script src="/static/js/bbox_overlay.js"></script>
+<script src="/static/js/control_panel.js"></script>
 {% endblock %}
