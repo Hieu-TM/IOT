@@ -56,7 +56,7 @@ DEFAULTS = {
         "workflow_id": "",                # workflow slug (NOT the document id)
         "image_input_name": "image",      # the workflow's declared image input
         "predictions_key": "",            # empty => auto-detect (see probe)
-        "confidence": 0.5,
+        "confidence": 0.07,
         "timeout_s": 30,
         "retries": 2,
         # Extra workflow inputs sent alongside the image, e.g. {"model_id": ...}.

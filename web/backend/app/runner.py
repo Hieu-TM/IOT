@@ -299,13 +299,11 @@ class Runner:
             device_info=device,
         )
 
+        # Hold in RAM for the browser's live view ("Khung vừa chụp") in both modes.
+        self._preview = (jpeg, metadata)
         if self._cfg.mode == "measure":
             written = self._post(metadata, jpeg, code)
         else:
-            # Preview: hold in RAM for the browser to view, don't touch disk.
-            # Single rebind — see the comment on `self._preview` in
-            # _reset_state for why this must stay one statement.
-            self._preview = (jpeg, metadata)
             written = False
 
         self._last = {

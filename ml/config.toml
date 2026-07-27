@@ -52,7 +52,7 @@ image_input_name = "image"          # ten input anh ma workflow khai bao
 #   python -m ml.infer.probe <anh.jpg>
 # roi dien ten khoa vao day, vd "model_predictions" hoac "model_predictions.predictions"
 predictions_key = ""
-confidence = 0.5                    # nguong tin cay - CHUA duoc dung, danh cho sau nay
+confidence = 0.07                   # nguong tin cay - gui vao input "confidence" cua workflow
 timeout_s = 30                      # thoi gian cho goi API (giay)
 retries = 2                         # so lan thu lai khi loi
 

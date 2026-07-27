@@ -23,9 +23,12 @@ DATABASE_URL = f"sqlite:///{DB_PATH.as_posix()}"
 # Default calibration (~14 px/mm at VGA, ~40mm working distance — CLAUDE.md).
 PX_PER_MM_DEFAULT = 14.0
 
-# The deployed detector's classes. All four are microplastic MORPHOLOGIES - the model
-# has no non-plastic class, so it cannot distinguish plastic from bubbles/organics.
-CLASS_LIST = ["fiber", "film", "fragment", "pallet", "unknown"]
+# The deployed detector's classes. fiber/film/fragment/pallet/unknown are
+# microplastic MORPHOLOGIES; "bubble" is a non-debris class the model now also
+# detects. Bubbles are filtered out in ml/infer/mapper.py (NON_DEBRIS_CLASSES)
+# before ingest, so they never reach particle_count / the QC warning below —
+# this list stays informational and is not itself enforced as a filter.
+CLASS_LIST = ["fiber", "film", "fragment", "pallet", "unknown", "bubble"]
 
 # Below this confidence the device/mock relabels a particle as "unknown"
 # (backend only stores the final label — §2.1).

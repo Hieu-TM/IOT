@@ -2,10 +2,10 @@
 
 > Tutorial thực thi: từ các chi tiết đã in/đã mua → lắp thành trạm hoàn chỉnh → nạp firmware →
 > canh sáng → chạy thử chu trình Stop-Flow. Bám sát kiến trúc **lắp-từ-đáy** (`plan.md` §2, §8),
-> quyết định điện **module L298N** ([[pump-drive-decision]]) và firmware OV3660 (`firmware/`).
+> quyết định điện **module L298N** ([[pump-drive-decision]]) và firmware OV2640 (`firmware/`).
 >
 > ⚠️ **Đọc trước — vấn đề mở phải biết:**
-> - **Lấy nét:** test 2026-07-08 cho thấy lens OV3660 của unit thực **KHÔNG nét ở 40mm** — chỉ nét mờ ~1cm
+> - **Lấy nét:** test 2026-07-08 cho thấy lens OV2640 của unit thực **KHÔNG nét ở 40mm** — chỉ nét mờ ~1cm
 >   ([[camera-focus-limit]]). Hướng dẫn này dựng đúng cơ khí baseline, nhưng **bước 6 (canh nét) có thể thất bại**;
 >   xem §9 để xử lý (macro clip-on / đổi cự ly / đổi module AF).
 >
@@ -46,7 +46,7 @@
 | Đĩa acrylic đáy (cửa sổ trong) | **Ø42 × 3mm**, acrylic ĐÚC (cast), trong | Cắt laser |
 | Màng khuếch tán | Ø~42, mica mờ / giấy can — **1–3 lớp xếp chồng** | Cắt |
 | Module LED móc khoá | **37.5×10×16mm**, đầu LED hướng lên, cắm ma sát | Mua sẵn |
-| XIAO ESP32-S3 Sense | Cảm biến **OV3660** 3MP ([[camera-sensor]]) | Mua sẵn |
+| ESP32-CAM (AI-Thinker) | Cảm biến **OV2640** 2MP (board XIAO ESP32-S3 Sense là biến thể cũ, xem §2) | Mua sẵn |
 | Bơm màng **RS365 12V** | Tự mồi, bbox ~90×40×35, ngạnh Ø8 | Mua sẵn |
 | Ống silicone | **ID≈8 / OD≈11mm** | Mua sẵn |
 
@@ -85,6 +85,12 @@
 ---
 
 ## 2. Lắp cụm camera vào nắp (base)
+
+> ⚠️ **Baseline hiện tại dùng ESP32-CAM (AI-Thinker), không phải XIAO.** Các bước dưới đây mô tả rãnh giữ
+> **XIAO ESP32-S3 Sense** trong base gốc — vẫn đúng nếu bạn build biến thể tham khảo cũ. Cho board
+> **ESP32-CAM** thật đang dùng, lắp qua chi tiết in `top_cap_esp32cam` (`cam_variant=1` trong
+> `openscad/aqua_scope_assembly_001.scad`) thay vì rãnh XIAO này — kiểm lại số đo/lỗ trên chi tiết đó
+> trước khi lắp, vì hướng dẫn §2 chưa được viết lại cho biến thể ESP32-CAM.
 
 1. Đặt **XIAO ESP32-S3 Sense** vào rãnh giữ sẵn trong base, **camera úp thẳng xuống**, ống kính chui qua lỗ Ø7.5 ở tâm base.
 2. Kiểm trục quang: tâm cụm lỗ **(−6.2, 81.5)** chính là trục camera ([[base-mount-interface]]).
@@ -130,15 +136,17 @@
 
 ### 6.1 Nạp firmware (Arduino IDE)
 1. Cài Arduino IDE + gói board **esp32 by Espressif (≥3.0)**.
-2. Mở `firmware/aqua_scope_cam/aqua_scope_cam.ino` (giữ `camera_pins.h` cùng thư mục).
-3. Tools: Board **XIAO_ESP32S3** · **PSRAM: OPI PSRAM** (bắt buộc) · Partition **Huge APP (3MB No OTA/1MB SPIFFS)**.
-4. Cắm USB-C → chọn Port → **Upload**. Lỗi upload thì giữ nút **BOOT** khi cắm.
+2. Mở `firmware/aqua_scope_station/` (firmware chính thức hiện tại — gộp cả camera lẫn điều khiển bơm, xem callout đầu file).
+3. Tools: Board **AI Thinker ESP32-CAM** · **PSRAM: Enabled** · Partition **Huge APP (3MB No OTA/1MB SPIFFS)**.
+4. Cắm USB-TTL (ESP32-CAM không có USB-C onboard, cần adapter rời) → chọn Port → **Upload**. Lỗi upload thì giữ nút **BOOT/IO0** khi cắm.
+
+> Bước trên dành cho board **ESP32-CAM** đang dùng. `firmware/aqua_scope_cam/aqua_scope_cam.ino` (board `XIAO_ESP32S3`, có sẵn USB-C) là firmware cho biến thể XIAO cũ — chỉ dùng nếu bạn build lại biến thể tham khảo đó.
 
 ### 6.2 Canh phơi sáng thủ công (qua WiFi — khuyến nghị)
 1. Board phát WiFi **`AquaScope`** (mật khẩu `aquascope`) → nối điện thoại/laptop → mở **http://192.168.4.1**.
 2. **Bật đèn nền.** Kéo slider **Exposure/Gain**: mục tiêu nền **xám đều**, hạt = **bóng đen rõ**.
    - Firmware đã **TẮT AEC / AEC-DSP / AGC** sẵn; giữ **Gain=0**, **Exposure thấp** (mặc định `t100`, `g0`).
-3. Chọn **độ phân giải** cao khi chụp phân tích: **SXGA/UXGA** (thậm chí QXGA của OV3660) — để hạt nhỏ không biến mất.
+3. Chọn **độ phân giải** cao khi chụp phân tích: **SXGA/UXGA** — để hạt nhỏ không biến mất.
 4. Ưng ý → bấm **LƯU CỨNG vào flash** (cắm điện lần sau tự chạy đúng thông số).
 
 > Serial (115200): `t<exposure>` `g<gain>` `f<framesize>` (12=SXGA,13=UXGA,17=QXGA) `s`=lưu `x`=chụp 1 frame phân tích.
@@ -244,7 +252,7 @@ Kiểm nghiệm cơ khí (làm thủ công trước khi tự động hoá):
 
 ## 9. Xử lý vấn đề lấy nét (nếu §6 cho ảnh mờ)
 
-Theo [[camera-focus-limit]], lens OV3660 của unit thực không nét ở 40mm. Ba hướng (thử theo thứ tự rẻ→tốn):
+Theo [[camera-focus-limit]], lens OV2640 của unit thực không nét ở 40mm. Ba hướng (thử theo thứ tự rẻ→tốn):
 
 - **(a) Macro clip-on lens** gắn trước lens hiện tại — rẻ, không phá; thử canh nét ở ~4cm. **Thử đầu tiên.**
 - **(b) Đổi cự ly làm việc về ~1–2cm** để khớp điểm nét thật — được độ phân giải cao (~100+px/mm) nhưng **phải
@@ -268,7 +276,7 @@ Bối cảnh QC nước đầu vào nhà máy thực phẩm ([[application-conte
 ## Phụ lục — Thứ tự lắp tóm tắt (checklist)
 
 - [ ] Hoàn thiện bề mặt: lòng ống trên = đen nhám; khoang đèn = trắng mờ; acrylic sạch
-- [ ] XIAO vào base, camera úp xuống (§2)
+- [ ] ESP32-CAM vào base qua `top_cap_esp32cam`, camera úp xuống (§2)
 - [ ] Base ↔ ống: 4 vít M3 (§3)
 - [ ] *(từ đáy)* Khay → đĩa acrylic + silicon → vòng ép snap-fit (§4)
 - [ ] Luồn ống qua 2 khe dọc → đóng nút bịt khe (§4)

@@ -11,13 +11,18 @@ Honesty notes carried in the values themselves:
 
 from .naming import resolve_px_per_mm
 
+# Classes that are real detections but not debris — excluded before they ever
+# become a "particle" so they can't inflate particle_count or trip the QC
+# warning threshold (web/backend/app/config.py WARN_PARTICLE_COUNT).
+NON_DEBRIS_CLASSES = {"bubble"}
+
 
 def build_metadata(*, detections, image_width, image_height, sample_code,
                    captured_at, device_id, px_per_mm, batch_lot=None,
-                   device_info=None):
+                   device_info=None, exclude_classes=NON_DEBRIS_CLASSES):
     px, _ = resolve_px_per_mm(px_per_mm)  # tolerate None; CLI resolves+warns first
     particles = []
-    for i, d in enumerate(detections):
+    for i, d in enumerate(d for d in detections if d.class_name not in exclude_classes):
         x, y, w, h = d.bbox_xywh
         particles.append({
             "blob_index": i,

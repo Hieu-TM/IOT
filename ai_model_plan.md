@@ -7,6 +7,11 @@
 >
 > Liên quan: `CLAUDE.md` §"Image processing / inference", memory `image-processing-hybrid`,
 > `camera-focus-limit`, `application-context`.
+>
+> ⚠️ **Trạng thái hiện tại:** kế hoạch on-device classifier dưới đây được viết cho phần cứng **XIAO
+> ESP32-S3** (có lệnh vector AI). Baseline đang dùng là **ESP32-CAM (AI-Thinker, ESP32 thường)** — không
+> có lệnh vector AI đó — nên pipeline thật hiện tại offload sang PC/laptop chạy YOLO (xem `ml/`,
+> `ml/deploy_options.md`), chưa dùng classifier on-device như tài liệu này mô tả.
 
 ---
 
@@ -14,7 +19,7 @@
 
 Model AI học từ ảnh. **Ảnh mờ → model rác, không cứu được bằng train.** Trước khi tốn công thu dữ liệu:
 
-1. **Phải giải quyết xong lỗi lấy nét lens** (memory `camera-focus-limit`): unit OV3660 hiện KHÔNG nét ở 3–5cm. Chọn 1 trong 3 hướng (macro clip-on / đổi khoảng cách ~1–2cm / thay module AF) và **xác nhận chụp được ảnh nét ở khoảng cách làm việc** trước khi thu dataset. Nếu bỏ qua bước này, mọi Phase sau đều vô nghĩa.
+1. **Phải giải quyết xong lỗi lấy nét lens** (memory `camera-focus-limit`): unit OV2640 hiện KHÔNG nét ở 3–5cm. Chọn 1 trong 3 hướng (macro clip-on / đổi khoảng cách ~1–2cm / thay module AF) và **xác nhận chụp được ảnh nét ở khoảng cách làm việc** trước khi thu dataset. Nếu bỏ qua bước này, mọi Phase sau đều vô nghĩa.
 2. **Classical CV phải chạy được và xuất được crop** từng blob (bounding box quanh mỗi hạt). Chính output crop này là input của model. Nếu CV chưa xong, làm CV trước.
 3. **Khóa cứng thông số chụp phân tích**: manual exposure (AEC/AEC-DSP/AGC = OFF, Gain=0, Exposure thấp), độ phân giải cao (SXGA/UXGA khi phân tích), backlit đều không hotspot. Dataset phải chụp **đúng cấu hình sẽ dùng khi chạy thật** — nếu train ở điều kiện A mà deploy ở điều kiện B, độ chính xác sập.
 

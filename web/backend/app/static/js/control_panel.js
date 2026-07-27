@@ -198,10 +198,13 @@
       // current page URL in several browsers and renders as a broken-image
       // box — hide the element itself instead of leaving it pointed at
       // nothing.
-      $('cp-preview').hidden = !s.has_preview;
-      if (s.has_preview) {
-        // cache-bust: khung đổi mỗi chu kỳ, cùng một URL
-        $('cp-preview').src = '/api/runner/preview.jpg?t=' + encodeURIComponent(last.at);
+      var previewUrl = s.has_preview
+        ? '/api/runner/preview.jpg?t=' + encodeURIComponent(last.at)
+        : (last.written && last.sample_code ? '/images/' + encodeURIComponent(last.sample_code) + '.jpg' : '');
+      $('cp-preview').hidden = !previewUrl;
+      if (previewUrl && $('cp-preview').getAttribute('data-src') !== previewUrl) {
+        $('cp-preview').setAttribute('data-src', previewUrl);
+        $('cp-preview').src = previewUrl;
       }
     }
   }

@@ -72,6 +72,21 @@ def test_device_info_lands_in_metadata():
     assert md["device"]["camera"]["exposure"] == 100
 
 
+def test_bubble_class_excluded_from_particles():
+    dets = _dets() + [Detection(bbox_xywh=(5, 5, 12, 12), class_name="bubble", confidence=0.8)]
+    md = build_metadata(
+        detections=dets,
+        image_width=640,
+        image_height=480,
+        sample_code="S3",
+        captured_at=datetime(2026, 7, 15, tzinfo=timezone.utc),
+        device_id="pc-infer",
+        px_per_mm=10.0,
+    )
+    assert len(md["particles"]) == 2
+    assert all(p["label"] != "bubble" for p in md["particles"])
+
+
 def test_no_device_info_means_no_device_key():
     md = build_metadata(
         detections=[],

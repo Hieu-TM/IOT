@@ -1,6 +1,6 @@
 # Aqua Scope — Trạm Quan Trắc & Đếm Hạt/Rác Thải Vĩ Mô Trong Dòng Chảy (1mm–5mm)
 
-Aqua Scope là dự án chuyển đổi cụm camera của kính hiển vi mini (**XIAO ESP32-S3 Sense**) thành một **trạm chụp ảnh và đếm hạt tự động** đặt trong một **khối trụ chắn sáng**, camera nhìn thẳng xuống một **dòng chảy nước hở** để **phát hiện, đếm và đo kích thước** các hạt nhựa/rác thải vĩ mô cỡ **1mm – 5mm**.
+Aqua Scope là dự án chuyển đổi một cụm camera (**baseline hiện tại: ESP32-CAM AI-Thinker, OV2640**; board gốc thử nghiệm là XIAO ESP32-S3 Sense, đã thay từ 2026-07-15, nay chỉ giữ làm biến thể cơ khí tham khảo) thành một **trạm chụp ảnh và đếm hạt tự động** đặt trong một **khối trụ chắn sáng**, camera nhìn thẳng xuống một **dòng chảy nước hở** để **phát hiện, đếm và đo kích thước** các hạt nhựa/rác thải vĩ mô cỡ **1mm – 5mm**.
 
 > **Phạm vi trung thực về vật lý:** Hệ này **đếm và đo kích thước hạt/rác trong dòng chảy** bằng ảnh bóng đổ (silhouette). Nó **không** phân biệt hóa học "hạt này là nhựa hay không phải nhựa" — việc đó cần nhuộm huỳnh quang (Nile Red) và được ghi nhận là **hướng mở rộng tương lai**, không nằm trong baseline.
 
@@ -85,7 +85,7 @@ Khối trụ chắn sáng **ngắn** (~4–5cm), camera úp xuống từ nắp t
 ```mermaid
 graph TD
     subgraph "Khối Trụ Chụp Ảnh (Imaging Tube)"
-        T3["Nắp trụ tháo được: Camera XIAO ESP32-S3 Sense úp thẳng xuống"]
+        T3["Nắp trụ tháo được: Camera ESP32-CAM (AI-Thinker) úp thẳng xuống"]
         T2["Thân trụ chắn sáng (~4-5cm): cố định cự ly nét 3-5cm + buồng tối"]
         T1["Đáy: Khay dòng chảy hở, đáy TRONG SUỐT (đĩa acrylic tròn); mực nước giữ bằng bơm-tắt (van tự chặn)"]
         B["Hộp đèn nền (Light Box): đèn chiếu GIÁN TIẾP vào nền trắng, ánh sáng dội ngược lên"]
@@ -221,8 +221,8 @@ sequenceDiagram
     autonumber
     participant Bom as Trạm Bơm
     participant Den as Đèn Nền Trắng
-    participant Cam as Camera (XIAO)
-    participant CV as Xử lý ảnh (ESP32-S3)
+    participant Cam as Camera (ESP32-CAM)
+    participant CV as Xử lý ảnh (PC/laptop qua ml/)
 
     Note over Bom, CV: B1: Cấp mẫu
     Bom->>Bom: Bơm RS365 hút chuỗi nguồn→khay→thải, khay đầy tới mép tràn
@@ -234,8 +234,8 @@ sequenceDiagram
     Den->>Den: Bật đèn nền trắng (ổn định)
     Cam->>Cam: Chụp ảnh độ phân giải CAO (SXGA/UXGA)
 
-    Note over Bom, CV: B4: Đếm & Đo + Phân loại (Hybrid)
-    CV->>CV: Classical CV: threshold → connected components → centroid + diện tích → đếm & phân bố size; rồi crop từng blob → classifier gán loại hạt
+    Note over Bom, CV: B4: Đếm & Đo + Phân loại
+    CV->>CV: PC/laptop kéo ảnh, chạy YOLO (local hoặc Roboflow) → bbox + class + confidence; size_mm = max(w,h) / px_per_mm
 
     Note over Bom, CV: B5: Xả mẫu
     Den->>Den: Tắt đèn
@@ -243,7 +243,7 @@ sequenceDiagram
 ```
 
 > **Vì sao PHẢI dừng dòng khi chụp (Stop-Flow là bắt buộc, KHÔNG phải di sản bơm nhu động):** dừng dòng cần cho **quang học + thuật toán**, độc lập với loại bơm:
-> 1. **Rolling shutter** của OV2640/OV3660 (mỗi hàng pixel phơi sáng lệch giờ) làm hạt đang trôi **méo hình (skew) + nhòe** → sai phép **ĐO KÍCH THƯỚC**. (Chụp lúc chảy cần global shutter hoặc đèn strobe freeze — hệ này không có.)
+> 1. **Rolling shutter** của OV2640 (mỗi hàng pixel phơi sáng lệch giờ) làm hạt đang trôi **méo hình (skew) + nhòe** → sai phép **ĐO KÍCH THƯỚC**. (Chụp lúc chảy cần global shutter hoặc đèn strobe freeze — hệ này không có.)
 > 2. Mặt nước chảy **gợn sóng** → khúc xạ bóng hạt, lệch vị trí/kích thước biểu kiến. Settle 1–2s làm mặt phẳng lại.
 > 3. Đếm cần **mẫu RỜI RẠC, thể tích cố định** (1 ảnh = N hạt trong diện tích khay × 6mm) → quy ra nồng độ + truy xuất nguồn gốc.
 > 4. Pipeline `threshold → connected components → count` là thuật toán **MỘT KHUNG** → chạy trên dòng đang chảy sẽ **đếm đôi** cùng một hạt.
@@ -252,17 +252,19 @@ sequenceDiagram
 
 ---
 
-## 🧠 Xử Lý Ảnh (Hybrid: Classical CV đếm+đo + ML phân loại, on-device)
+## 🧠 Xử Lý Ảnh
 
-Baseline dùng **pipeline lai**, tận dụng đúng thế mạnh của ESP32-S3: **classical CV** lo **đếm + đo kích thước** (chính xác, rẻ, không cần train), rồi **classifier nhỏ on-device** lo **phân loại từng hạt là GÌ** — việc mà classical CV không làm được.
+**Hiện trạng đang chạy:** ESP32-CAM chỉ chụp/phục vụ ảnh (`/capture`, `/stream`); một PC/laptop kéo ảnh về và chạy **YOLO** (local `ultralytics` hoặc Roboflow Workflow API — xem `ml/deploy_options.md`) để lấy bbox + class + confidence, suy ra `size_mm = max(w,h) / px_per_mm`, rồi gửi kết quả lên backend. Lý do offload: board ESP32-CAM hiện dùng (ESP32 thường) không có lệnh vector AI như dòng S3 mà thiết kế gốc bên dưới giả định.
 
-**Vì sao KHÔNG để object detection làm hết:** FOMO trên XIAO S3 chạy input ~96×96, ~143ms/~7fps nhưng **chỉ trả centroid, KHÔNG trả kích thước**; ở FOV ~40mm thì 96×96 ≈ 0.42mm/px → hạt <2mm chỉ ~5px, dễ mất hoặc dính chùm sau downsample. Detection thuần sẽ **mất deliverable phân bố kích thước** — thứ classical CV cho gần như miễn phí trên nền backlit tương phản cao.
+**Thiết kế gốc (viết cho phần cứng XIAO ESP32-S3, chưa áp dụng lại được trên ESP32-CAM hiện tại):** pipeline lai — **classical CV** lo **đếm + đo kích thước** (chính xác, rẻ, không cần train), rồi **classifier nhỏ on-device** lo **phân loại từng hạt là GÌ**.
 
-**Pipeline:**
+**Vì sao KHÔNG để object detection làm hết (lý do gốc, khi còn nhắm tới on-device S3):** FOMO trên XIAO S3 chạy input ~96×96, ~143ms/~7fps nhưng **chỉ trả centroid, KHÔNG trả kích thước**; ở FOV ~40mm thì 96×96 ≈ 0.42mm/px → hạt <2mm chỉ ~5px, dễ mất hoặc dính chùm sau downsample. Lập luận này áp dụng cho FOMO/end-to-end detection *chạy trên chip*; pipeline YOLO hiện tại chạy trên PC nên không bị giới hạn 96×96 đó, nhưng đổi cách tính size từ "connected components" sang "bbox / px_per_mm" — hai cách này CHƯA được đối chiếu độ chính xác với nhau.
+
+**Pipeline gốc (dự kiến, chưa chạy trên phần cứng hiện tại):**
 1. **Chụp phân giải cao** (SXGA/UXGA) → ảnh xám → **ngưỡng hóa** (vùng tối trên nền sáng) → **connected components** → mỗi blob cho **tâm + diện tích → đếm & phân bố kích thước**.
 2. **Crop từng blob** → đưa vào **classifier nhỏ** (TinyML, tận dụng lệnh vector AI của S3) → **gán loại hạt**. *(Danh sách lớp cụ thể — ví dụ nhựa / bọt khí / rác hữu cơ / sợi — sẽ chốt sau khi có dữ liệu mẫu thật.)*
 
-**Phần cứng:** chạy **on-device** trên XIAO ESP32-S3 (PSRAM 8MB, 240MHz, có lệnh vector AI). Nhánh CV có thể hạ ảnh về VGA (~14px/mm) cho vừa RAM; classifier chỉ ăn từng crop nhỏ nên nhẹ.
+**Phần cứng dự kiến cho pipeline gốc:** chạy **on-device** trên XIAO ESP32-S3 (PSRAM 8MB, 240MHz, có lệnh vector AI) — không phải phần cứng ESP32-CAM đang dùng hiện tại.
 
 *(Phân biệt nhựa/không-nhựa bằng hóa học vẫn là hướng mở rộng: nhuộm Nile Red + LED 365nm + kính lọc vàng → cấp thêm đặc trưng màu cho nhánh classifier, không thuộc baseline.)*
 
@@ -297,8 +299,8 @@ Bản ý tưởng đầu (huỳnh quang UV + FOMO + kính nổi + cự ly 10–1
   `aqua_scope_assembly_001.scad` (lắp ghép tổng, cờ `explode`/`show_*`/`cam_variant`),
   `print/*.scad → *.stl` (9 chi tiết in, đã kiểm manifold). Kiến trúc **lắp từ đáy**: vỏ 1 ống liền
   (đen trên/trắng dưới), khay + đĩa acrylic + vòng ép snap-fit + màng + vách LED đều luồn/tháo từ dưới;
-  2 khe dọc ±X cho ngạnh ống nước (có nút bịt chống lọt sáng). Có biến thể **ESP32-CAM** (`cam_variant=1`)
-  song song với bản gốc XIAO.
+  2 khe dọc ±X cho ngạnh ống nước (có nút bịt chống lọt sáng). Biến thể **ESP32-CAM** (`cam_variant=1`)
+  là baseline hiện tại; bản gốc XIAO chỉ còn giữ làm biến thể tham khảo.
 * [base/](file:///c:/University/Semester%204/IOT102/project/base): STL bệ gốc Matchboxscope — **chính là nắp trụ** (in sẵn, tái dùng nguyên bản, không dựng nắp mới). **Đường kính thân trụ lấy đúng footprint của base (~50×52mm)**, ống THẲNG không phình rộng.
 * [perestaltic pump/](file:///c:/University/Semester%204/IOT102/project/perestaltic%20pump): STL bơm nhu động Planktoscope Mini — **chỉ tham khảo, ĐÃ LOẠI** (quá chậm). Baseline dùng **bơm màng RS365 12V** chủ động.
 * [`so_do/`](file:///c:/University/Semester%204/IOT102/project/so_do): Sơ đồ tổng quan hệ thống + chi tiết hộp đèn nền (SVG).

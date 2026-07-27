@@ -57,6 +57,12 @@ def build_detector(cfg, backend, weights):
     """
     if backend == "roboflow":
         rf = cfg.section("roboflow")
+        # The workflow declares "confidence" as one of its own inputs (see
+        # ml/config.toml [roboflow] comment) - forward roboflow.confidence
+        # there so it actually reaches the model, unless the user already
+        # pinned it explicitly under [roboflow.extra_inputs].
+        extra_inputs = dict(rf.get("extra_inputs") or {})
+        extra_inputs.setdefault("confidence", rf.get("confidence"))
         return RoboflowWorkflowDetector(
             api_key=rf.get("api_key"),
             workspace=rf.get("workspace"),
@@ -66,7 +72,7 @@ def build_detector(cfg, backend, weights):
             predictions_key=rf.get("predictions_key"),
             timeout=rf.get("timeout_s"),
             retries=rf.get("retries"),
-            extra_inputs=rf.get("extra_inputs"),
+            extra_inputs=extra_inputs,
         )
     return Detector(weights)
 
