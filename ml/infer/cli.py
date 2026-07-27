@@ -9,12 +9,13 @@ import argparse
 import sys
 
 from . import config
+from .encoding_utils import force_utf8_output
 from .detector import Detector
 from .detector_roboflow import RoboflowWorkflowDetector
 from .ingest_client import post
 from .mapper import build_metadata
 from .naming import resolve_px_per_mm
-from .source import FolderSource
+from .source import Esp32CaptureSource, FolderSource, StationError
 
 
 def build_arg_parser():
@@ -34,6 +35,13 @@ def build_arg_parser():
     p.add_argument("--device-id", default=None)
     p.add_argument("--px-per-mm", type=float, default=None)
     p.add_argument("--batch-lot", default=None)
+    p.add_argument("--from-board", default=None, metavar="HOST",
+                   help="Chụp thẳng từ ESP32-CAM (IP/hostname) thay vì đọc "
+                        "thư mục ảnh. Mặc định lấy từ [station].host.")
+    p.add_argument("--count", type=int, default=None,
+                   help="Số khung chụp ở chế độ --from-board (mặc định 1)")
+    p.add_argument("--interval", type=float, default=None,
+                   help="Giây nghỉ giữa hai lần chụp (mặc định [station].interval_s)")
     p.add_argument("--dry-run", action="store_true",
                    help="Detect and print only; do not POST to the API")
     p.add_argument("--check-config", action="store_true",
@@ -49,6 +57,12 @@ def build_detector(cfg, backend, weights):
     """
     if backend == "roboflow":
         rf = cfg.section("roboflow")
+        # The workflow declares "confidence" as one of its own inputs (see
+        # ml/config.toml [roboflow] comment) - forward roboflow.confidence
+        # there so it actually reaches the model, unless the user already
+        # pinned it explicitly under [roboflow.extra_inputs].
+        extra_inputs = dict(rf.get("extra_inputs") or {})
+        extra_inputs.setdefault("confidence", rf.get("confidence"))
         return RoboflowWorkflowDetector(
             api_key=rf.get("api_key"),
             workspace=rf.get("workspace"),
@@ -58,20 +72,47 @@ def build_detector(cfg, backend, weights):
             predictions_key=rf.get("predictions_key"),
             timeout=rf.get("timeout_s"),
             retries=rf.get("retries"),
-            extra_inputs=rf.get("extra_inputs"),
+            extra_inputs=extra_inputs,
         )
     return Detector(weights)
 
 
 def main(argv=None):
+    force_utf8_output()
     args = build_arg_parser().parse_args(argv)
     cfg = config.load(args.config)
 
     backend = args.backend if args.backend is not None else cfg.get("general", "backend")
+    # Thứ tự ưu tiên chung của dự án (cờ CLI > env > config.local > config >
+    # mặc định): cfg.get() đã gộp sẵn env/config.local/config, chỉ còn thiếu
+    # cờ --from-board (sống ở argparse, ngoài tầm với của Config). Tính MỘT
+    # LẦN ở đây và dùng lại cho cả nhánh --check-config lẫn nhánh chạy thật -
+    # trước đây --check-config tự tính lại (thiếu cờ) nên báo host "chưa đặt"
+    # dù --from-board đã cung cấp nó (xem cfg.missing_for("station")).
+    station_host = (args.from_board if args.from_board is not None
+                    else cfg.get("station", "host"))
+
+    # general.backend chọn BACKEND SUY LUẬN (local .pt hay roboflow), trực
+    # giao với NGUỒN ẢNH (--from-board / station.host). "station" chỉ hợp lệ
+    # làm tham số backend nội bộ cho Config.missing_for() ở nhánh
+    # --check-config bên dưới - không phải giá trị người dùng được đặt cho
+    # general.backend. Nếu lọt qua đây, build_detector() rơi xuống nhánh mặc
+    # định Detector(weights) và chạy local mà không ai biết vì sao.
+    if backend == "station":
+        print("[error] general.backend=\"station\" không hợp lệ - đó là NGUỒN "
+              "ẢNH (dùng --from-board <ip> hoặc [station].host), không phải "
+              "backend suy luận. Đặt general.backend = \"local\" hoặc "
+              "\"roboflow\".")
+        return 2
 
     if args.check_config:
         problems = cfg.missing_for(backend)
         print(f"backend = {backend}")
+        # Nguồn ảnh trực giao với backend suy luận: chỉ soi khi người dùng thực
+        # sự định chụp từ board, chứ không bắt ai chạy thư mục ảnh phải khai host.
+        if station_host:
+            print(f"station = {station_host}")
+            problems = problems + cfg.missing_for("station", station_host=station_host)
         if problems:
             print("Config NOT ready:")
             for p in problems:
@@ -80,8 +121,13 @@ def main(argv=None):
         print("Config OK - ready to run.")
         return 0
 
-    if not args.input:
-        print("[error] missing input (image file or folder). See --help.")
+    if args.input and args.from_board:
+        print("[error] chọn MỘT trong hai: thư mục ảnh, hoặc --from-board <ip>. "
+              "Đưa cả hai thì không rõ định lấy ảnh từ đâu.")
+        return 2
+    if not args.input and not station_host:
+        print("[error] chưa có nguồn ảnh. Đưa thư mục ảnh, hoặc dùng "
+              "--from-board <ip> (hoặc đặt [station].host trong ml/config.toml).")
         return 2
 
     api_url = args.api_url if args.api_url is not None else cfg.get("ingest", "api_url")
@@ -104,13 +150,41 @@ def main(argv=None):
             print(f"  - {problem}")
         print("Run `python -m ml.infer --check-config` after fixing.")
         return 2
-    source = FolderSource(args.input)
+    if args.input:
+        if args.count is not None or args.interval is not None:
+            print("[warn] --count/--interval chỉ có tác dụng cùng --from-board; "
+                  "bị bỏ qua ở chế độ đọc thư mục ảnh.")
+        source = FolderSource(args.input)
+    else:
+        station = cfg.section("station")
+        try:
+            source = Esp32CaptureSource(
+                station_host,
+                count=args.count if args.count is not None else 1,
+                interval_s=(args.interval if args.interval is not None
+                            else station.get("interval_s")),
+                timeout_s=station.get("timeout_s"),
+                retries=station.get("retries"),
+            )
+        except StationError as exc:
+            print(f"[error] {exc}")
+            return 2
+        print(f"[station] {source.device_id or '(không rõ device_id)'} @ "
+              f"{station_host} | firmware={source.device_info.get('firmware')}")
+        if source.device_info.get("prefs_saved") is False:
+            print("[warn] board CHƯA lưu cấu hình camera vào flash. Sau khi mất "
+                  "điện nó sẽ về mặc định — canh sáng lại rồi gọi "
+                  f"http://{station_host}/control?var=save&val=1")
+        # device_id của board thắng hằng trong config, nhưng cờ tay vẫn thắng cả hai.
+        if args.device_id is None and source.device_id:
+            device_id = source.device_id
 
     created = already = failed = 0
     collisions = 0
     failed_names = []
     collision_names = []
     seen_codes = {}  # sample_code -> first source_name this run
+    device_info = getattr(source, "device_info", None)
     for frame in source.frames():
         prior = seen_codes.get(frame.sample_code)
         if prior is not None:
@@ -132,6 +206,7 @@ def main(argv=None):
                 device_id=device_id,
                 px_per_mm=px,
                 batch_lot=batch_lot,
+                device_info=device_info,
             )
             if args.dry_run:
                 print(f"[dry-run] {frame.source_name}: "
@@ -153,7 +228,18 @@ def main(argv=None):
             failed_names.append(f"{frame.source_name} ({exc})")
             print(f"[failed] {frame.source_name}: {exc}")
 
+    # Esp32CaptureSource đếm khung nó tự bỏ (hỏng cả retries lần thử, vd board
+    # trả 503 lúc brownout) ở thuộc tính .skipped - khung đó KHÔNG BAO GIỜ tới
+    # vòng lặp trên nên created/already/failed không hề biết nó tồn tại. Không
+    # cộng số này vào đây thì "board hỏng toàn bộ 3/3 khung" sẽ in ra
+    # "0 created, 0 already_exists, 0 failed" và RC=0 - báo thành công trong
+    # khi mất trắng cả lượt đo. FolderSource không có thuộc tính này nên
+    # getattr mặc định 0 cho chế độ đọc thư mục ảnh.
+    skipped = getattr(source, "skipped", 0)
+
     summary = f"\nSummary: {created} created, {already} already_exists, {failed} failed"
+    if skipped:
+        summary += f", {skipped} skipped (board lỗi, không thu được khung)"
     if collisions:
         summary += f", {collisions} collisions (not sent)"
     print(summary)
@@ -165,7 +251,7 @@ def main(argv=None):
         print("Collisions (rename to store):")
         for n in collision_names:
             print(f"  - {n}")
-    return 1 if (failed or collisions) else 0
+    return 1 if (failed or collisions or skipped) else 0
 
 
 if __name__ == "__main__":

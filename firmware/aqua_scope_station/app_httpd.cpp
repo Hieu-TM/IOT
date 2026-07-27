@@ -1,0 +1,1165 @@
+// Copyright 2015-2016 Espressif Systems (Shanghai) PTE LTD
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "Arduino.h"
+#include <stdarg.h>
+#include "esp_http_server.h"
+#include "esp_timer.h"
+#include "esp_camera.h"
+#include "img_converters.h"
+#include "fb_gfx.h"
+#include "esp32-hal-ledc.h"
+#include "sdkconfig.h"
+#include "camera_index.h"
+#include "board_config.h"
+#include "aqua_prefs.h"
+#include "aqua_device.h"
+#include "aqua_pump.h"
+#include <WiFi.h>
+
+#if defined(ARDUINO_ARCH_ESP32) && defined(CONFIG_ARDUHAL_ESP_LOG)
+#include "esp32-hal-log.h"
+#endif
+
+// Bản firmware hiện hành — báo trong /device để đối chiếu khi audit.
+#define AQUA_FIRMWARE_VERSION "aqua_scope_station/1.1.0"
+
+// LED FLASH setup
+#if defined(LED_GPIO_NUM)
+#define CONFIG_LED_MAX_INTENSITY 255
+
+int led_duty = 0;
+bool isStreaming = false;
+
+#endif
+
+typedef struct {
+  httpd_req_t *req;
+  size_t len;
+} jpg_chunking_t;
+
+#define PART_BOUNDARY "123456789000000000000987654321"
+static const char *_STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
+static const char *_STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
+static const char *_STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\nX-Timestamp: %d.%06d\r\n\r\n";
+
+httpd_handle_t stream_httpd = NULL;
+httpd_handle_t camera_httpd = NULL;
+
+typedef struct {
+  size_t size;   //number of values used for filtering
+  size_t index;  //current value index
+  size_t count;  //value count
+  int sum;
+  int *values;  //array to be filled with values
+} ra_filter_t;
+
+static ra_filter_t ra_filter;
+
+static ra_filter_t *ra_filter_init(ra_filter_t *filter, size_t sample_size) {
+  memset(filter, 0, sizeof(ra_filter_t));
+
+  filter->values = (int *)malloc(sample_size * sizeof(int));
+  if (!filter->values) {
+    return NULL;
+  }
+  memset(filter->values, 0, sample_size * sizeof(int));
+
+  filter->size = sample_size;
+  return filter;
+}
+
+#if ARDUHAL_LOG_LEVEL >= ARDUHAL_LOG_LEVEL_INFO
+static int ra_filter_run(ra_filter_t *filter, int value) {
+  if (!filter->values) {
+    return value;
+  }
+  filter->sum -= filter->values[filter->index];
+  filter->values[filter->index] = value;
+  filter->sum += filter->values[filter->index];
+  filter->index++;
+  filter->index = filter->index % filter->size;
+  if (filter->count < filter->size) {
+    filter->count++;
+  }
+  return filter->sum / filter->count;
+}
+#endif
+
+#if defined(LED_GPIO_NUM)
+void enable_led(bool en) {  // Turn LED On or Off
+  int duty = en ? led_duty : 0;
+  if (en && isStreaming && (led_duty > CONFIG_LED_MAX_INTENSITY)) {
+    duty = CONFIG_LED_MAX_INTENSITY;
+  }
+  ledcWrite(LED_GPIO_NUM, duty);
+  //ledc_set_duty(CONFIG_LED_LEDC_SPEED_MODE, CONFIG_LED_LEDC_CHANNEL, duty);
+  //ledc_update_duty(CONFIG_LED_LEDC_SPEED_MODE, CONFIG_LED_LEDC_CHANNEL);
+  log_i("Set LED intensity to %d", duty);
+}
+#endif
+
+static esp_err_t bmp_handler(httpd_req_t *req) {
+  camera_fb_t *fb = NULL;
+  esp_err_t res = ESP_OK;
+#if ARDUHAL_LOG_LEVEL >= ARDUHAL_LOG_LEVEL_INFO
+  int64_t fr_start = esp_timer_get_time();
+#endif
+  fb = esp_camera_fb_get();
+  if (!fb) {
+    log_e("Camera capture failed");
+    httpd_resp_send_500(req);
+    return ESP_FAIL;
+  }
+
+  httpd_resp_set_type(req, "image/x-windows-bmp");
+  httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=capture.bmp");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+
+  char ts[32];
+  // Cast to uint32_t is safe until year 2106.
+  snprintf(ts, 32, "%" PRIu32 ".%06" PRIu32, (uint32_t)fb->timestamp.tv_sec, (uint32_t)fb->timestamp.tv_usec);
+  httpd_resp_set_hdr(req, "X-Timestamp", (const char *)ts);
+
+  uint8_t *buf = NULL;
+  size_t buf_len = 0;
+  bool converted = frame2bmp(fb, &buf, &buf_len);
+  esp_camera_fb_return(fb);
+  if (!converted) {
+    log_e("BMP Conversion failed");
+    httpd_resp_send_500(req);
+    return ESP_FAIL;
+  }
+  res = httpd_resp_send(req, (const char *)buf, buf_len);
+  free(buf);
+#if ARDUHAL_LOG_LEVEL >= ARDUHAL_LOG_LEVEL_INFO
+  int64_t fr_end = esp_timer_get_time();
+#endif
+  log_i("BMP: %" PRId32 "ms, %" PRIu32 "B", (int32_t)((fr_end - fr_start) / 1000), (uint32_t)buf_len);
+  return res;
+}
+
+static size_t jpg_encode_stream(void *arg, size_t index, const void *data, size_t len) {
+  jpg_chunking_t *j = (jpg_chunking_t *)arg;
+  if (!index) {
+    j->len = 0;
+  }
+  if (httpd_resp_send_chunk(j->req, (const char *)data, len) != ESP_OK) {
+    return 0;
+  }
+  j->len += len;
+  return len;
+}
+
+static esp_err_t capture_handler(httpd_req_t *req) {
+  camera_fb_t *fb = NULL;
+  esp_err_t res = ESP_OK;
+#if ARDUHAL_LOG_LEVEL >= ARDUHAL_LOG_LEVEL_INFO
+  int64_t fr_start = esp_timer_get_time();
+#endif
+
+  // KHÔNG bật đèn flash GPIO4. Bản gốc Espressif bật nó 150ms trước mỗi lần
+  // chụp — hợp lý cho camera thường, nhưng SAI cho rig này: Aqua Scope chiếu
+  // sáng bằng đèn nền TỪ DƯỚI (backlit silhouette). Thêm ánh sáng từ trên
+  // xuống sẽ làm nhạt bóng đen của hạt và tạo phản xạ trên mặt nước.
+  // Bỏ luôn được 150ms trễ mỗi khung.
+  fb = esp_camera_fb_get();
+
+  if (!fb) {
+    // 503 chứ không 500: đây là hỏng TẠM THỜI (thường do brownout khi WiFi TX
+    // và chụp UXGA trùng nhau). Client nên thử lại khung này, không nên coi là
+    // board hỏng. Kèm thân lý do để log phía PC nói được điều gì đã xảy ra.
+    log_e("Camera capture failed");
+    httpd_resp_set_status(req, "503 Service Unavailable");
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_sendstr(req, "camera capture failed (esp_camera_fb_get tra NULL)");
+    return ESP_FAIL;
+  }
+
+  aquaDeviceCountCapture();
+
+  httpd_resp_set_type(req, "image/jpeg");
+  httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=capture.jpg");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+
+  char ts[32];
+  // Cast to uint32_t is safe until year 2106.
+  snprintf(ts, 32, "%" PRIu32 ".%06" PRIu32, (uint32_t)fb->timestamp.tv_sec, (uint32_t)fb->timestamp.tv_usec);
+  httpd_resp_set_hdr(req, "X-Timestamp", (const char *)ts);
+
+#if ARDUHAL_LOG_LEVEL >= ARDUHAL_LOG_LEVEL_INFO
+  size_t fb_len = 0;
+#endif
+  if (fb->format == PIXFORMAT_JPEG) {
+#if ARDUHAL_LOG_LEVEL >= ARDUHAL_LOG_LEVEL_INFO
+    fb_len = fb->len;
+#endif
+    res = httpd_resp_send(req, (const char *)fb->buf, fb->len);
+  } else {
+    jpg_chunking_t jchunk = {req, 0};
+    res = frame2jpg_cb(fb, 80, jpg_encode_stream, &jchunk) ? ESP_OK : ESP_FAIL;
+    httpd_resp_send_chunk(req, NULL, 0);
+#if ARDUHAL_LOG_LEVEL >= ARDUHAL_LOG_LEVEL_INFO
+    fb_len = jchunk.len;
+#endif
+  }
+  esp_camera_fb_return(fb);
+#if ARDUHAL_LOG_LEVEL >= ARDUHAL_LOG_LEVEL_INFO
+  int64_t fr_end = esp_timer_get_time();
+#endif
+  log_i("JPG: %" PRIu32 "B %" PRId32 " ms", (uint32_t)fb_len, (int32_t)((fr_end - fr_start) / 1000));
+  return res;
+}
+
+static esp_err_t stream_handler(httpd_req_t *req) {
+  camera_fb_t *fb = NULL;
+  struct timeval _timestamp;
+  esp_err_t res = ESP_OK;
+  size_t _jpg_buf_len = 0;
+  uint8_t *_jpg_buf = NULL;
+  // Bản gốc Espressif khai báo `char *part_buf[128]` — MẢNG 128 CON TRỎ (512
+  // byte stack), không phải 128 ký tự, rồi ép kiểu `(char *)part_buf` khi dùng.
+  // Chạy đúng chỉ vì 512 > 128, nhưng đó là nhầm kiểu và phí 384 byte stack của
+  // task httpd. Khai báo đúng thứ thật sự cần.
+  char part_buf[128];
+
+  static int64_t last_frame = 0;
+  if (!last_frame) {
+    last_frame = esp_timer_get_time();
+  }
+
+  res = httpd_resp_set_type(req, _STREAM_CONTENT_TYPE);
+  if (res != ESP_OK) {
+    return res;
+  }
+
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(req, "X-Framerate", "60");
+
+#if defined(LED_GPIO_NUM)
+  isStreaming = true;
+  // KHÔNG bật đèn flash GPIO4 khi bắt đầu stream. Stream cũng được dùng để
+  // canh sáng/canh nét cho backlit silhouette — bật đèn chiếu từ trên xuống
+  // lúc canh sáng sẽ làm người dùng canh sai (xem lý do đầy đủ ở capture_handler).
+#endif
+
+  while (true) {
+    fb = esp_camera_fb_get();
+    if (!fb) {
+      log_e("Camera capture failed");
+      res = ESP_FAIL;
+    } else {
+      _timestamp.tv_sec = fb->timestamp.tv_sec;
+      _timestamp.tv_usec = fb->timestamp.tv_usec;
+      if (fb->format != PIXFORMAT_JPEG) {
+        bool jpeg_converted = frame2jpg(fb, 80, &_jpg_buf, &_jpg_buf_len);
+        esp_camera_fb_return(fb);
+        fb = NULL;
+        if (!jpeg_converted) {
+          log_e("JPEG compression failed");
+          res = ESP_FAIL;
+        }
+      } else {
+        _jpg_buf_len = fb->len;
+        _jpg_buf = fb->buf;
+      }
+    }
+    if (res == ESP_OK) {
+      res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
+    }
+    if (res == ESP_OK) {
+      size_t hlen = snprintf(part_buf, sizeof(part_buf), _STREAM_PART, _jpg_buf_len, (int)_timestamp.tv_sec, (int)_timestamp.tv_usec);
+      res = httpd_resp_send_chunk(req, part_buf, hlen);
+    }
+    if (res == ESP_OK) {
+      res = httpd_resp_send_chunk(req, (const char *)_jpg_buf, _jpg_buf_len);
+    }
+    if (fb) {
+      esp_camera_fb_return(fb);
+      fb = NULL;
+      _jpg_buf = NULL;
+    } else if (_jpg_buf) {
+      free(_jpg_buf);
+      _jpg_buf = NULL;
+    }
+    if (res != ESP_OK) {
+      log_e("Send frame failed");
+      break;
+    }
+    int64_t fr_end = esp_timer_get_time();
+
+    int64_t frame_time = fr_end - last_frame;
+    last_frame = fr_end;
+
+    frame_time /= 1000;
+#if ARDUHAL_LOG_LEVEL >= ARDUHAL_LOG_LEVEL_INFO
+    uint32_t avg_frame_time = ra_filter_run(&ra_filter, frame_time);
+#endif
+    log_i(
+      "MJPG: %" PRIu32 "B %" PRId32 "ms (%.1ffps), AVG: %" PRIu32 "ms (%.1ffps)", (uint32_t)_jpg_buf_len, (int32_t)frame_time, 1000.0 / frame_time,
+      avg_frame_time, 1000.0 / avg_frame_time
+    );
+  }
+
+#if defined(LED_GPIO_NUM)
+  isStreaming = false;
+#endif
+
+  return res;
+}
+
+static esp_err_t parse_get(httpd_req_t *req, char **obuf) {
+  char *buf = NULL;
+  size_t buf_len = 0;
+
+  buf_len = httpd_req_get_url_query_len(req) + 1;
+  if (buf_len > 1) {
+    buf = (char *)malloc(buf_len);
+    if (!buf) {
+      httpd_resp_send_500(req);
+      return ESP_FAIL;
+    }
+    if (httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
+      *obuf = buf;
+      return ESP_OK;
+    }
+    free(buf);
+  }
+  httpd_resp_send_404(req);
+  return ESP_FAIL;
+}
+
+static esp_err_t cmd_handler(httpd_req_t *req) {
+  char *buf = NULL;
+  char variable[32];
+  // 65 = 64 + '\0'. Kích thước này GẮN VỚI giới hạn 1..64 ký tự của
+  // device_id (xem aqua_device.cpp::idValid()) — nếu value[] nhỏ hơn 65,
+  // httpd_query_key_value() cắt cụt các device_id dài và trả
+  // ESP_ERR_HTTPD_RESULT_TRUNC (≠ ESP_OK), bị bắt ở nhánh lỗi chung phía
+  // dưới nên nhánh "device_id" không bao giờ chạy tới cho id dài ≥32 ký tự,
+  // dù thông báo 400 bên dưới nói giới hạn là 64. Không thu nhỏ lại buffer
+  // này nếu chưa hiểu đang phá hợp đồng nào.
+  char value[65];
+
+  if (parse_get(req, &buf) != ESP_OK) {
+    return ESP_FAIL;
+  }
+  if (httpd_query_key_value(buf, "var", variable, sizeof(variable)) != ESP_OK || httpd_query_key_value(buf, "val", value, sizeof(value)) != ESP_OK) {
+    free(buf);
+    httpd_resp_send_404(req);
+    return ESP_FAIL;
+  }
+  free(buf);
+
+  int val = atoi(value);
+  log_i("%s = %d", variable, val);
+  sensor_t *s = esp_camera_sensor_get();
+  int res = 0;
+
+  if (!strcmp(variable, "framesize")) {
+    if (s->pixformat == PIXFORMAT_JPEG) {
+      // Chặn TẠI NGUỒN: trước đây (framesize_t)val được gán thẳng không kiểm
+      // tra. Một giá trị rác (val âm, hoặc >= FRAMESIZE_INVALID) không chỉ
+      // làm device_handler/status_handler đọc lệch mảng resolution[] (đã tự
+      // vá ở đó) - nó còn sống sót qua aquaPrefsSave()/NVS và bị nạp lại mù
+      // quáng ở mỗi lần khởi động (xem aqua_prefs.cpp). Chặn ở đây thì rác
+      // không bao giờ chạm được tới sensor hay flash.
+      if (val < 0 || val >= (int)FRAMESIZE_INVALID) {
+        log_i("framesize=%d ngoài phạm vi hợp lệ [0, %d) - bỏ qua", val, (int)FRAMESIZE_INVALID);
+        res = -1;
+      } else if (val > (int)aquaPrefsMaxFramesize()) {
+        // Vượt trần bộ nhớ (board không PSRAM -> initCamera() đã hạ xuống SVGA
+        // + CAMERA_FB_IN_DRAM). Đặt được thì sensor vẫn nhận, nhưng buffer
+        // không đủ chỗ và ảnh trả về bị cụt - im lặng cho qua ở đây chính là
+        // cách hỏng khó truy nhất. Từ chối rõ ràng thay vì kẹp âm thầm: người
+        // dùng cần biết vì sao độ phân giải họ chọn không có hiệu lực.
+        log_i("framesize=%d vượt trần bộ nhớ (tối đa %d) - từ chối", val, (int)aquaPrefsMaxFramesize());
+        res = -1;
+      } else {
+        res = s->set_framesize(s, (framesize_t)val);
+      }
+    }
+  } else if (!strcmp(variable, "quality")) {
+    res = s->set_quality(s, val);
+  } else if (!strcmp(variable, "contrast")) {
+    res = s->set_contrast(s, val);
+  } else if (!strcmp(variable, "brightness")) {
+    res = s->set_brightness(s, val);
+  } else if (!strcmp(variable, "saturation")) {
+    res = s->set_saturation(s, val);
+  } else if (!strcmp(variable, "gainceiling")) {
+    res = s->set_gainceiling(s, (gainceiling_t)val);
+  } else if (!strcmp(variable, "colorbar")) {
+    res = s->set_colorbar(s, val);
+  } else if (!strcmp(variable, "awb")) {
+    res = s->set_whitebal(s, val);
+  } else if (!strcmp(variable, "agc")) {
+    res = s->set_gain_ctrl(s, val);
+  } else if (!strcmp(variable, "aec")) {
+    res = s->set_exposure_ctrl(s, val);
+  } else if (!strcmp(variable, "hmirror")) {
+    res = s->set_hmirror(s, val);
+  } else if (!strcmp(variable, "vflip")) {
+    res = s->set_vflip(s, val);
+  } else if (!strcmp(variable, "awb_gain")) {
+    res = s->set_awb_gain(s, val);
+  } else if (!strcmp(variable, "agc_gain")) {
+    res = s->set_agc_gain(s, val);
+  } else if (!strcmp(variable, "aec_value")) {
+    res = s->set_aec_value(s, val);
+  } else if (!strcmp(variable, "aec2")) {
+    res = s->set_aec2(s, val);
+  } else if (!strcmp(variable, "dcw")) {
+    res = s->set_dcw(s, val);
+  } else if (!strcmp(variable, "bpc")) {
+    res = s->set_bpc(s, val);
+  } else if (!strcmp(variable, "wpc")) {
+    res = s->set_wpc(s, val);
+  } else if (!strcmp(variable, "raw_gma")) {
+    res = s->set_raw_gma(s, val);
+  } else if (!strcmp(variable, "lenc")) {
+    res = s->set_lenc(s, val);
+  } else if (!strcmp(variable, "special_effect")) {
+    res = s->set_special_effect(s, val);
+  } else if (!strcmp(variable, "wb_mode")) {
+    res = s->set_wb_mode(s, val);
+  } else if (!strcmp(variable, "ae_level")) {
+    res = s->set_ae_level(s, val);
+  }
+  // --- Thêm cho Aqua Scope: preset buồng tối (backlit silhouette) -----------
+  // Port nguyên bộ thông số từ dataset_collector/firmware/app_httpd.cpp
+  // (`?var=darkmode`) — bản đã canh trên chính rig này, nên giữ y giá trị,
+  // đừng "làm tròn" lại.
+  //
+  // Vì sao là LỆNH chứ không phải mặc định lúc boot: mặc định dark làm ảnh tối
+  // và khó ngắm ngay khi cấp điện (đúng lý do bỏ nó khỏi aquaPrefsApplyDefaults).
+  // Nhưng canh tay lại 5 slider mỗi phiên cũng tệ ngang. Collector giải quyết
+  // bằng auto lúc boot + 1 lệnh bật preset khi cần đo — đây là lệnh đó.
+  //
+  // Thứ tự có ý nghĩa: TẮT AEC/AGC trước, rồi mới đặt exposure/gain thủ công.
+  // Làm ngược lại thì sensor ghi đè giá trị thủ công ở khung kế tiếp.
+  else if (!strcmp(variable, "darkmode")) {
+    s->set_gain_ctrl(s, 0);                   // AGC OFF — bật thì sensor tự kéo sáng, cháy nền trắng
+    s->set_exposure_ctrl(s, 0);               // AEC OFF — chuyển sang phơi sáng thủ công
+    s->set_aec2(s, 0);                        // AEC DSP OFF
+    s->set_agc_gain(s, 0);                    // gain 0 — ít nhiễu nhất
+    s->set_gainceiling(s, (gainceiling_t)0);  // trần gain thấp nhất (2X)
+    s->set_aec_value(s, 200);                 // phơi sáng thấp: nền sáng đều, không cháy trắng
+    s->set_brightness(s, 0);
+    s->set_contrast(s, 2);                    // tăng tương phản — hạt tối nổi trên nền sáng
+    s->set_saturation(s, -2);                 // gần grayscale, bớt nhiễu màu ở rìa hạt
+    s->set_whitebal(s, 1);                    // cân bằng trắng cho nền LED trắng
+    s->set_awb_gain(s, 1);
+    s->set_lenc(s, 1);                        // bù sáng rìa ống kính — nền đều hơn
+    s->set_bpc(s, 1);
+    s->set_wpc(s, 1);
+    s->set_raw_gma(s, 1);
+    s->set_dcw(s, 1);
+    s->set_special_effect(s, 0);              // giữ màu; đổi 2 nếu muốn grayscale hẳn
+    Serial.println("[cam] Da ap preset buong toi (backlit silhouette).");
+    res = 0;
+  }
+  // --- Thêm cho Aqua Scope: ghi cứng / khôi phục cấu hình -------------------
+  // `val` bị bỏ qua, chỉ cần có mặt cho đúng dạng /control?var=..&val=..
+  // Chuỗi, không phải số: dùng `value` thô chứ không dùng `val` (đã qua atoi).
+  else if (!strcmp(variable, "device_id")) {
+    if (!aquaDeviceSetId(value)) {
+      httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                          "device_id phải khớp [A-Za-z0-9._-], dài 1..64");
+      return ESP_FAIL;
+    }
+  } else if (!strcmp(variable, "save")) {
+    aquaPrefsSave(s);
+    log_i("Đã lưu cấu hình vào flash");
+  } else if (!strcmp(variable, "reset")) {
+    aquaPrefsReset(s);
+    log_i("Đã xóa cấu hình, về mặc định backlit + reset pump timing");
+  }
+  // --- Điều khiển bơm qua HTTP -------------------------------------------------
+  // Cùng dạng /control?var=pump_xxx&val=yyy. val là số nguyên.
+  //
+  // HAI QUY TẮC, cả hai đều đã từng bị vi phạm ở bản trước:
+  //
+  // 1) Giá trị ngoài miền phải TỪ CHỐI (res = -1 -> HTTP 500), không được im
+  //    lặng bỏ qua rồi trả 200. Trả 200 cho một lệnh không có hiệu lực đúng là
+  //    kiểu hỏng khó truy nhất — nhánh `framesize` phía trên đã học bài này.
+  //
+  // 2) Handler này chạy ở TASK HTTPD, không phải task loop(). Tuyệt đối không
+  //    gọi hàm nào có ramp/đổi pha (aquaPumpSetAuto...) — chúng blocking 350ms
+  //    và sẽ tranh chấp state machine với aquaPumpTick(). Dùng
+  //    aquaPumpRequestAuto(): nó chỉ ghi cờ, tick sẽ thực thi ở đúng task.
+  else if (!strcmp(variable, "pump_auto")) {
+    aquaPumpRequestAuto(val != 0);
+  } else if (!strcmp(variable, "pump_fill_ms")) {
+    if (val > 0) aquaPumpTiming()->fillMs = val; else res = -1;
+  } else if (!strcmp(variable, "pump_settle_ms")) {
+    if (val > 0) aquaPumpTiming()->settleMs = val; else res = -1;
+  } else if (!strcmp(variable, "pump_flush_ms")) {
+    if (val > 0) aquaPumpTiming()->flushMs = val; else res = -1;
+  } else if (!strcmp(variable, "pump_cooldown_ms")) {
+    if (val > 0) aquaPumpTiming()->cooldownMs = val; else res = -1;
+  } else if (!strcmp(variable, "pump_fill_duty")) {
+    if (val >= 0 && val <= 100) aquaPumpTiming()->fillDuty = (uint8_t)val; else res = -1;
+  } else if (!strcmp(variable, "pump_flush_duty")) {
+    if (val >= 0 && val <= 100) aquaPumpTiming()->flushDuty = (uint8_t)val; else res = -1;
+  } else if (!strcmp(variable, "pump_ramp_up_ms")) {
+    if (val >= 0) aquaPumpTiming()->rampUpMs = val; else res = -1;
+  } else if (!strcmp(variable, "pump_ramp_down_ms")) {
+    if (val >= 0) aquaPumpTiming()->rampDownMs = val; else res = -1;
+  }
+#if defined(LED_GPIO_NUM)
+  else if (!strcmp(variable, "led_intensity")) {
+    // CỬA HẬU ĐÃ BỊ BỊT. capture_handler và stream_handler đều cố ý không bật
+    // đèn flash GPIO4 (rig chiếu sáng TỪ DƯỚI - đèn từ trên làm nhạt bóng hạt
+    // và tạo phản xạ trên mặt nước), nhưng bản cũ ở đây vẫn gọi enable_led(true)
+    // khi đang stream. Nghĩa là chỉ cần kéo thanh trượt LED trên web UI gốc của
+    // Espressif giữa lúc canh sáng là phá đúng cái mà hai handler kia bảo vệ.
+    //
+    // Vẫn NHẬN lệnh và trả 200 thay vì gỡ hẳn nhánh này: web UI là blob gzip
+    // của Espressif, không sửa được, và thanh trượt LED của nó vẫn tồn tại -
+    // gỡ nhánh này sẽ rơi xuống "Unknown command" và trả 500 mỗi lần chạm vào.
+    // Ghi lại giá trị để /status phản chiếu đúng thứ người dùng vừa kéo, nhưng
+    // KHÔNG bao giờ đẩy xuống phần cứng.
+    led_duty = val;
+    log_i("led_intensity=%d đã ghi nhận nhưng KHÔNG bật đèn: rig dùng đèn nền từ dưới", val);
+  }
+#endif
+  else {
+    // -2 (không phải -1) để phân biệt "không có lệnh này" với "giá trị ngoài
+    // miền" ở thông báo phía dưới. Hai lỗi này cần hai cách xử lý khác nhau:
+    // một là sai tên/sai firmware, một là sai tham số.
+    res = -2;
+  }
+
+  if (res < 0) {
+    // In ra Serial, KHÔNG dùng log_i(). Core Debug Level mặc định của Arduino
+    // IDE là None nên log_i() không in gì cả — hệ quả: người dùng chỉ thấy
+    // trang trắng "Server has encountered an unexpected error" và Serial im
+    // lặng tuyệt đối, không có đầu mối nào để lần. Serial.printf luôn in.
+    Serial.printf("[http][LOI] var=%s val=%s -> HTTP 500 (%s)\n", variable, value,
+                  res == -2 ? "khong co lenh nay"
+                            : "gia tri ngoai mien cho phep / sensor tu choi");
+    return httpd_resp_send_500(req);
+  }
+
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, NULL, 0);
+}
+
+// Nối chuỗi có định dạng vào [p, end) và trả về con trỏ ghi mới, ĐÃ KẸP tại end.
+//
+// Vì sao cần: snprintf() trả về số ký tự LẼ RA đã viết, không phải số đã viết
+// thật. Nên mẫu của bản gốc Espressif — `p += snprintf(p, end - p, ...)` lặp
+// lại vài chục lần — đẩy p VƯỢT QUA end ngay khi buffer đầy. Lần gọi kế tiếp
+// truyền `end - p` âm; tham số size của snprintf là size_t nên số âm đó biến
+// thành một giá trị khổng lồ, và snprintf ghi thoải mái ra ngoài
+// json_response[]. Đây không phải lo xa: với OV3660/OV5640, status_handler dump
+// 48 thanh ghi (~630 byte) cộng ~340 byte trường trạng thái, chỉ còn dư khoảng
+// 50 byte trong buffer 1024. Chỉ cần thêm vài trường nữa là tràn thật.
+static char *json_append(char *p, char *end, const char *fmt, ...) {
+  if (p >= end) return end;
+  va_list ap;
+  va_start(ap, fmt);
+  int n = vsnprintf(p, (size_t)(end - p), fmt, ap);
+  va_end(ap);
+  if (n < 0) return p;             // lỗi mã hóa: không nhích con trỏ
+  if (n >= end - p) return end;    // đã bị cắt cụt: dừng đúng ở end
+  return p + n;
+}
+
+static char *print_reg(char *p, char *end, sensor_t *s, uint16_t reg, uint32_t mask) {
+  return json_append(p, end, "\"0x%04x\":%d,", reg, s->get_reg(s, reg, mask));
+}
+
+// Escape tối thiểu cho một chuỗi trước khi nhét vào JSON: chỉ `"` và `\` —
+// đủ để chặn ca thực tế duy nhất ở đây (SSID router do người dùng đặt tự do,
+// KHÔNG do firmware kiểm soát, có thể chứa hai ký tự này và làm gãy cấu trúc
+// JSON nếu nhét thẳng, xem WiFi.SSID() ở device_handler bên dưới). Không xử
+// lý \uXXXX cho ký tự điều khiển — SSID chứa ký tự điều khiển là ca hiếm đến
+// mức không đáng đánh đổi thêm độ phức tạp; ký tự điều khiển bị bỏ qua thay
+// vì cố escape đầy đủ.
+static void jsonEscape(const char *src, char *dst, size_t dstSize) {
+  if (dstSize == 0) return;
+  size_t di = 0;
+  for (size_t si = 0; src[si] != '\0' && di + 1 < dstSize; ++si) {
+    unsigned char c = (unsigned char)src[si];
+    if (c == '"' || c == '\\') {
+      if (di + 2 >= dstSize) break;  // không đủ chỗ cho cặp escape, dừng sớm
+      dst[di++] = '\\';
+      dst[di++] = (char)c;
+    } else if (c < 0x20) {
+      continue;  // ký tự điều khiển: bỏ, xem lý do ở docstring hàm
+    } else {
+      dst[di++] = (char)c;
+    }
+  }
+  dst[di] = '\0';
+}
+
+// GET /device — danh tính + thiết lập hiện hành, phục vụ truy xuất nguồn gốc.
+// KHÁC với /status: /status trả cấu hình camera cho slider của web UI (định
+// dạng do bản gốc Espressif quy định, không được đổi). /device là khối audit
+// mà ml.infer nhét vào metadata của mẫu.
+static esp_err_t device_handler(httpd_req_t *req) {
+  // Mở rộng buffer từ 640 -> 1024 để chứa thêm object pump.
+  static char json[1024];
+  sensor_t *s = esp_camera_sensor_get();
+
+  const char *sensorName = "unknown";
+  if (s != nullptr) {
+    if (s->id.PID == OV2640_PID) sensorName = "OV2640";
+    else if (s->id.PID == OV3660_PID) sensorName = "OV3660";
+    else if (s->id.PID == OV5640_PID) sensorName = "OV5640";
+  }
+
+  framesize_t fs = (s != nullptr) ? (framesize_t)s->status.framesize : FRAMESIZE_UXGA;
+  // s->status.framesize đến từ cmd_handler (var=framesize) — giờ đã validate
+  // ở nguồn (xem cmd_handler) và aqua_prefs.cpp cũng tự clamp giá trị nạp từ
+  // NVS, nhưng đây là chỗ đầu tiên trong file dùng nó làm chỉ số mảng
+  // resolution[], nên vẫn tự chặn thêm một lớp phòng thủ: một bản firmware cũ
+  // (trước khi cmd_handler được vá) có thể đã ghi rác vào flash, và NGAY CẢ
+  // sau khi vá, một điểm ghi s->status.framesize nào đó trong tương lai lỡ bỏ
+  // qua clampFramesize() thì cũng không được phép biến thành LoadProhibited
+  // (đọc ngoài vùng cấp phát của resolution[]) khiến board tự reset — không
+  // chấp nhận được với một trạm chạy tự động không người trông. FRAMESIZE_INVALID
+  // (sensor.h) là cận trên hợp lệ; ngoài khoảng [0, FRAMESIZE_INVALID) thì lùi về UXGA.
+  if (fs < 0 || fs >= FRAMESIZE_INVALID) {
+    fs = FRAMESIZE_UXGA;
+  }
+  uint16_t w = resolution[fs].width;
+  uint16_t h = resolution[fs].height;
+
+  // SSID chuẩn 802.11 tối đa 32 byte; *2 (trường hợp mọi byte đều phải escape)
+  // + 1 cho '\0' là đủ dư.
+  char ssidEscaped[72];
+  jsonEscape(WiFi.SSID().c_str(), ssidEscaped, sizeof(ssidEscaped));
+
+  snprintf(json, sizeof(json),
+           "{\"device_id\":\"%s\","
+           "\"firmware\":\"%s\","
+           "\"uptime_s\":%lu,"
+           "\"wifi\":{\"ssid\":\"%s\",\"rssi\":%d,\"ip\":\"%s\"},"
+           "\"psram\":%s,"
+           "\"sensor\":\"%s\","
+           "\"camera\":{\"framesize\":%d,\"width\":%u,\"height\":%u,"
+           "\"quality\":%d,\"aec\":%d,\"aec2\":%d,\"agc\":%d,"
+           "\"gain\":%d,\"exposure\":%d},"
+           "\"captures\":%lu,"
+           "\"prefs_saved\":%s}",
+           aquaDeviceId(),
+           AQUA_FIRMWARE_VERSION,
+           (unsigned long)(millis() / 1000UL),
+           ssidEscaped, WiFi.RSSI(), WiFi.localIP().toString().c_str(),
+           psramFound() ? "true" : "false",
+           sensorName,
+           (int)fs, w, h,
+           s ? s->status.quality : 0,
+           s ? s->status.aec : 0,
+           s ? s->status.aec2 : 0,
+           s ? s->status.agc : 0,
+           s ? s->status.agc_gain : 0,
+           s ? s->status.aec_value : 0,
+           (unsigned long)aquaDeviceCaptureCount(),
+           aquaPrefsIsSaved() ? "true" : "false");
+
+  // Thêm pump object vào JSON (nối vào trước '}' cuối).
+  // Tìm '}' cuối cùng và ghi đè từ đó.
+  size_t len = strlen(json);
+  if (len > 0 && json[len - 1] == '}') {
+    PumpTiming *pt = aquaPumpTiming();
+    snprintf(json + len - 1, sizeof(json) - len + 1,
+             ",\"pump\":{\"pwm_ready\":%s,\"auto\":%s,\"phase\":\"%s\",\"duty\":%u,"
+             "\"cycle_count\":%lu,"
+             "\"fill_ms\":%lu,\"settle_ms\":%lu,\"flush_ms\":%lu,\"cooldown_ms\":%lu,"
+             "\"ramp_up_ms\":%lu,\"ramp_down_ms\":%lu,"
+             "\"fill_duty\":%u,\"flush_duty\":%u}}",
+             aquaPumpPwmReady() ? "true" : "false",
+             aquaPumpIsAuto() ? "true" : "false",
+             pumpPhaseName(aquaPumpPhase()),
+             aquaPumpDuty(),
+             (unsigned long)aquaPumpCycleCount(),
+             (unsigned long)pt->fillMs, (unsigned long)pt->settleMs,
+             (unsigned long)pt->flushMs, (unsigned long)pt->cooldownMs,
+             (unsigned long)pt->rampUpMs, (unsigned long)pt->rampDownMs,
+             pt->fillDuty, pt->flushDuty);
+  }
+
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t status_handler(httpd_req_t *req) {
+  static char json_response[1024];
+
+  sensor_t *s = esp_camera_sensor_get();
+  char *p = json_response;
+  char *end = json_response + sizeof(json_response);
+  *p++ = '{';
+
+  if (s->id.PID == OV5640_PID || s->id.PID == OV3660_PID) {
+    for (int reg = 0x3400; reg < 0x3406; reg += 2) {
+      p = print_reg(p, end, s, reg, 0xFFF);  //12 bit
+    }
+    p = print_reg(p, end, s, 0x3406, 0xFF);
+
+    p = print_reg(p, end, s, 0x3500, 0xFFFF0);  //16 bit
+    p = print_reg(p, end, s, 0x3503, 0xFF);
+    p = print_reg(p, end, s, 0x350a, 0x3FF);   //10 bit
+    p = print_reg(p, end, s, 0x350c, 0xFFFF);  //16 bit
+
+    for (int reg = 0x5480; reg <= 0x5490; reg++) {
+      p = print_reg(p, end, s, reg, 0xFF);
+    }
+
+    for (int reg = 0x5380; reg <= 0x538b; reg++) {
+      p = print_reg(p, end, s, reg, 0xFF);
+    }
+
+    for (int reg = 0x5580; reg < 0x558a; reg++) {
+      p = print_reg(p, end, s, reg, 0xFF);
+    }
+    p = print_reg(p, end, s, 0x558a, 0x1FF);  //9 bit
+  } else if (s->id.PID == OV2640_PID) {
+    p = print_reg(p, end, s, 0xd3, 0xFF);
+    p = print_reg(p, end, s, 0x111, 0xFF);
+    p = print_reg(p, end, s, 0x132, 0xFF);
+  }
+
+  p = json_append(p, end, "\"xclk\":%u,", s->xclk_freq_hz / 1000000);
+  p = json_append(p, end, "\"pixformat\":%u,", s->pixformat);
+  p = json_append(p, end, "\"framesize\":%u,", s->status.framesize);
+  p = json_append(p, end, "\"quality\":%u,", s->status.quality);
+  p = json_append(p, end, "\"brightness\":%d,", s->status.brightness);
+  p = json_append(p, end, "\"contrast\":%d,", s->status.contrast);
+  p = json_append(p, end, "\"saturation\":%d,", s->status.saturation);
+  p = json_append(p, end, "\"sharpness\":%d,", s->status.sharpness);
+  p = json_append(p, end, "\"special_effect\":%u,", s->status.special_effect);
+  p = json_append(p, end, "\"wb_mode\":%u,", s->status.wb_mode);
+  p = json_append(p, end, "\"awb\":%u,", s->status.awb);
+  p = json_append(p, end, "\"awb_gain\":%u,", s->status.awb_gain);
+  p = json_append(p, end, "\"aec\":%u,", s->status.aec);
+  p = json_append(p, end, "\"aec2\":%u,", s->status.aec2);
+  p = json_append(p, end, "\"ae_level\":%d,", s->status.ae_level);
+  p = json_append(p, end, "\"aec_value\":%u,", s->status.aec_value);
+  p = json_append(p, end, "\"agc\":%u,", s->status.agc);
+  p = json_append(p, end, "\"agc_gain\":%u,", s->status.agc_gain);
+  p = json_append(p, end, "\"gainceiling\":%u,", s->status.gainceiling);
+  p = json_append(p, end, "\"bpc\":%u,", s->status.bpc);
+  p = json_append(p, end, "\"wpc\":%u,", s->status.wpc);
+  p = json_append(p, end, "\"raw_gma\":%u,", s->status.raw_gma);
+  p = json_append(p, end, "\"lenc\":%u,", s->status.lenc);
+  p = json_append(p, end, "\"hmirror\":%u,", s->status.hmirror);
+  p = json_append(p, end, "\"vflip\":%u,", s->status.vflip);
+  p = json_append(p, end, "\"dcw\":%u,", s->status.dcw);
+  p = json_append(p, end, "\"colorbar\":%u", s->status.colorbar);
+#if defined(LED_GPIO_NUM)
+  p = json_append(p, end, ",\"led_intensity\":%u", led_duty);
+#else
+  p = json_append(p, end, ",\"led_intensity\":%d", -1);
+#endif
+  // Hai byte cuối ('}' và '\0') trước đây được ghi vô điều kiện bằng *p++, tức
+  // ghi ra NGOÀI mảng khi p đã chạm end. Chừa chỗ trước: thà JSON cụt còn hơn
+  // hỏng bộ nhớ kề bên.
+  if (p > end - 2) {
+    p = end - 2;
+  }
+  *p++ = '}';
+  *p = '\0';
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, json_response, strlen(json_response));
+}
+
+static esp_err_t xclk_handler(httpd_req_t *req) {
+  char *buf = NULL;
+  char _xclk[32];
+
+  if (parse_get(req, &buf) != ESP_OK) {
+    return ESP_FAIL;
+  }
+  if (httpd_query_key_value(buf, "xclk", _xclk, sizeof(_xclk)) != ESP_OK) {
+    free(buf);
+    httpd_resp_send_404(req);
+    return ESP_FAIL;
+  }
+  free(buf);
+
+  int xclk = atoi(_xclk);
+  log_i("Set XCLK: %d MHz", xclk);
+
+  sensor_t *s = esp_camera_sensor_get();
+  int res = s->set_xclk(s, LEDC_TIMER_0, xclk);
+  if (res) {
+    return httpd_resp_send_500(req);
+  }
+
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, NULL, 0);
+}
+
+static esp_err_t reg_handler(httpd_req_t *req) {
+  char *buf = NULL;
+  char _reg[32];
+  char _mask[32];
+  char _val[32];
+
+  if (parse_get(req, &buf) != ESP_OK) {
+    return ESP_FAIL;
+  }
+  if (httpd_query_key_value(buf, "reg", _reg, sizeof(_reg)) != ESP_OK || httpd_query_key_value(buf, "mask", _mask, sizeof(_mask)) != ESP_OK
+      || httpd_query_key_value(buf, "val", _val, sizeof(_val)) != ESP_OK) {
+    free(buf);
+    httpd_resp_send_404(req);
+    return ESP_FAIL;
+  }
+  free(buf);
+
+  int reg = atoi(_reg);
+  int mask = atoi(_mask);
+  int val = atoi(_val);
+  log_i("Set Register: reg: 0x%02x, mask: 0x%02x, value: 0x%02x", reg, mask, val);
+
+  sensor_t *s = esp_camera_sensor_get();
+  int res = s->set_reg(s, reg, mask, val);
+  if (res) {
+    return httpd_resp_send_500(req);
+  }
+
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, NULL, 0);
+}
+
+static esp_err_t greg_handler(httpd_req_t *req) {
+  char *buf = NULL;
+  char _reg[32];
+  char _mask[32];
+
+  if (parse_get(req, &buf) != ESP_OK) {
+    return ESP_FAIL;
+  }
+  if (httpd_query_key_value(buf, "reg", _reg, sizeof(_reg)) != ESP_OK || httpd_query_key_value(buf, "mask", _mask, sizeof(_mask)) != ESP_OK) {
+    free(buf);
+    httpd_resp_send_404(req);
+    return ESP_FAIL;
+  }
+  free(buf);
+
+  int reg = atoi(_reg);
+  int mask = atoi(_mask);
+  sensor_t *s = esp_camera_sensor_get();
+  int res = s->get_reg(s, reg, mask);
+  if (res < 0) {
+    return httpd_resp_send_500(req);
+  }
+  log_i("Get Register: reg: 0x%02x, mask: 0x%02x, value: 0x%02x", reg, mask, res);
+
+  char buffer[20];
+  const char *val = itoa(res, buffer, 10);
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, val, strlen(val));
+}
+
+static int parse_get_var(char *buf, const char *key, int def) {
+  char _int[16];
+  if (httpd_query_key_value(buf, key, _int, sizeof(_int)) != ESP_OK) {
+    return def;
+  }
+  return atoi(_int);
+}
+
+static esp_err_t pll_handler(httpd_req_t *req) {
+  char *buf = NULL;
+
+  if (parse_get(req, &buf) != ESP_OK) {
+    return ESP_FAIL;
+  }
+
+  int bypass = parse_get_var(buf, "bypass", 0);
+  int mul = parse_get_var(buf, "mul", 0);
+  int sys = parse_get_var(buf, "sys", 0);
+  int root = parse_get_var(buf, "root", 0);
+  int pre = parse_get_var(buf, "pre", 0);
+  int seld5 = parse_get_var(buf, "seld5", 0);
+  int pclken = parse_get_var(buf, "pclken", 0);
+  int pclk = parse_get_var(buf, "pclk", 0);
+  free(buf);
+
+  log_i("Set Pll: bypass: %d, mul: %d, sys: %d, root: %d, pre: %d, seld5: %d, pclken: %d, pclk: %d", bypass, mul, sys, root, pre, seld5, pclken, pclk);
+  sensor_t *s = esp_camera_sensor_get();
+  int res = s->set_pll(s, bypass, mul, sys, root, pre, seld5, pclken, pclk);
+  if (res) {
+    return httpd_resp_send_500(req);
+  }
+
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, NULL, 0);
+}
+
+static esp_err_t win_handler(httpd_req_t *req) {
+  char *buf = NULL;
+
+  if (parse_get(req, &buf) != ESP_OK) {
+    return ESP_FAIL;
+  }
+
+  int startX = parse_get_var(buf, "sx", 0);
+  int startY = parse_get_var(buf, "sy", 0);
+  int endX = parse_get_var(buf, "ex", 0);
+  int endY = parse_get_var(buf, "ey", 0);
+  int offsetX = parse_get_var(buf, "offx", 0);
+  int offsetY = parse_get_var(buf, "offy", 0);
+  int totalX = parse_get_var(buf, "tx", 0);
+  int totalY = parse_get_var(buf, "ty", 0);  // codespell:ignore totaly
+  int outputX = parse_get_var(buf, "ox", 0);
+  int outputY = parse_get_var(buf, "oy", 0);
+  bool scale = parse_get_var(buf, "scale", 0) == 1;
+  bool binning = parse_get_var(buf, "binning", 0) == 1;
+  free(buf);
+
+  log_i(
+    "Set Window: Start: %d %d, End: %d %d, Offset: %d %d, Total: %d %d, Output: %d %d, Scale: %u, Binning: %u", startX, startY, endX, endY, offsetX, offsetY,
+    totalX, totalY, outputX, outputY, scale, binning  // codespell:ignore totaly
+  );
+  sensor_t *s = esp_camera_sensor_get();
+  int res = s->set_res_raw(s, startX, startY, endX, endY, offsetX, offsetY, totalX, totalY, outputX, outputY, scale, binning);  // codespell:ignore totaly
+  if (res) {
+    return httpd_resp_send_500(req);
+  }
+
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, NULL, 0);
+}
+
+static esp_err_t index_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "text/html");
+  httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+  sensor_t *s = esp_camera_sensor_get();
+  if (s != NULL) {
+    if (s->id.PID == OV3660_PID) {
+      return httpd_resp_send(req, (const char *)index_ov3660_html_gz, index_ov3660_html_gz_len);
+    } else if (s->id.PID == OV5640_PID) {
+      return httpd_resp_send(req, (const char *)index_ov5640_html_gz, index_ov5640_html_gz_len);
+    } else {
+      return httpd_resp_send(req, (const char *)index_ov2640_html_gz, index_ov2640_html_gz_len);
+    }
+  } else {
+    log_e("Camera sensor not found");
+    return httpd_resp_send_500(req);
+  }
+}
+
+void startCameraServer() {
+  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+  config.max_uri_handlers = 16;
+  // FIX "A": tránh treo stream / "Failed to fetch" khi bấm lại.
+  // Cho phép server tự đóng kết nối cũ nhất bị kẹt để nhận kết nối stream mới
+  // (mặc định = false, nên socket stream bị treo sẽ chiếm slot vĩnh viễn).
+  config.lru_purge_enable = true;
+  // Cho server nhiều socket hơn để UI (:80) và stream (:81) không tranh nhau.
+  config.max_open_sockets = 4;
+  // Nếu gửi 1 khung bị nghẽn quá 4s thì bỏ, thoát vòng lặp và giải phóng socket
+  // thay vì giữ kết nối chết.
+  config.recv_wait_timeout = 4;
+  config.send_wait_timeout = 4;
+
+  httpd_uri_t index_uri = {
+    .uri = "/",
+    .method = HTTP_GET,
+    .handler = index_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
+  httpd_uri_t status_uri = {
+    .uri = "/status",
+    .method = HTTP_GET,
+    .handler = status_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
+  httpd_uri_t device_uri = {
+    .uri = "/device",
+    .method = HTTP_GET,
+    .handler = device_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
+  httpd_uri_t cmd_uri = {
+    .uri = "/control",
+    .method = HTTP_GET,
+    .handler = cmd_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
+  httpd_uri_t capture_uri = {
+    .uri = "/capture",
+    .method = HTTP_GET,
+    .handler = capture_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
+  httpd_uri_t stream_uri = {
+    .uri = "/stream",
+    .method = HTTP_GET,
+    .handler = stream_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
+  httpd_uri_t bmp_uri = {
+    .uri = "/bmp",
+    .method = HTTP_GET,
+    .handler = bmp_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
+  httpd_uri_t xclk_uri = {
+    .uri = "/xclk",
+    .method = HTTP_GET,
+    .handler = xclk_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
+  httpd_uri_t reg_uri = {
+    .uri = "/reg",
+    .method = HTTP_GET,
+    .handler = reg_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
+  httpd_uri_t greg_uri = {
+    .uri = "/greg",
+    .method = HTTP_GET,
+    .handler = greg_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
+  httpd_uri_t pll_uri = {
+    .uri = "/pll",
+    .method = HTTP_GET,
+    .handler = pll_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
+  httpd_uri_t win_uri = {
+    .uri = "/resolution",
+    .method = HTTP_GET,
+    .handler = win_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
+  ra_filter_init(&ra_filter, 20);
+
+  log_i("Starting web server on port: '%u'", config.server_port);
+  if (httpd_start(&camera_httpd, &config) == ESP_OK) {
+    httpd_register_uri_handler(camera_httpd, &index_uri);
+    httpd_register_uri_handler(camera_httpd, &cmd_uri);
+    httpd_register_uri_handler(camera_httpd, &status_uri);
+    httpd_register_uri_handler(camera_httpd, &device_uri);
+    httpd_register_uri_handler(camera_httpd, &capture_uri);
+    httpd_register_uri_handler(camera_httpd, &bmp_uri);
+
+    httpd_register_uri_handler(camera_httpd, &xclk_uri);
+    httpd_register_uri_handler(camera_httpd, &reg_uri);
+    httpd_register_uri_handler(camera_httpd, &greg_uri);
+    httpd_register_uri_handler(camera_httpd, &pll_uri);
+    httpd_register_uri_handler(camera_httpd, &win_uri);
+  }
+
+  config.server_port += 1;
+  config.ctrl_port += 1;
+  log_i("Starting stream server on port: '%u'", config.server_port);
+  if (httpd_start(&stream_httpd, &config) == ESP_OK) {
+    httpd_register_uri_handler(stream_httpd, &stream_uri);
+  }
+}
+
+void setupLedFlash() {
+#if defined(LED_GPIO_NUM)
+  ledcAttach(LED_GPIO_NUM, 5000, 8);
+#else
+  log_i("LED flash is disabled -> LED_GPIO_NUM undefined");
+#endif
+}

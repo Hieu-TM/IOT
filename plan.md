@@ -33,7 +33,7 @@ render được (lắp kín + exploded) + STL các chi tiết in.
 | **G4** | Ống bơm RS365 | **"8mm" = OD cổng vào/ra máy bơm** (không phải ID ống) | Ống silicone **ID≈8 / OD≈11**; ngạnh cổng RA khay OD≈8, lòng chảy ~6mm (≥3× hạt 2mm) |
 | **G5** | Vách đỡ LED | **MIẾNG RỜI** hẳn; thành ống chỉ 2 lỗ ren M3 ngang | Lắp module vào vách rời TRƯỚC rồi bắt ngang; tháo 2 ốc là lấy cả vách+module |
 | **Hình dạng trụ** | (chốt trước, 2026-07-06) | Ống **THẲNG**, OD=footprint base (~50mm), **KHÔNG phình cốc**; nắp = base ĐÃ IN tái dùng | `tube_od=50`, `tube_id=46`; khay/cửa sổ/đèn co cho lọt ID46 |
-| **Bơm** | (chốt trước) | **Bơm màng RS365 12V chủ động** (bỏ nhu động 28BYJ-48 + bỏ trọng lực); hạt <2mm ĐI QUA bơm | `pump_rs365.scad` = placeholder mua sẵn; điều khiển = **module relay** (MOSFET chỉ khi cần PWM) |
+| **Bơm** | (chốt trước) | **Bơm màng RS365 12V chủ động** (bỏ nhu động 28BYJ-48 + bỏ trọng lực); hạt <2mm ĐI QUA bơm | `pump_rs365.scad` = placeholder mua sẵn; điều khiển = **module L298N** (PWM vào ENA — cần soft-start/soft-stop chống sóng; relay/MOSFET là phương án CŨ, đã bỏ). Gá bằng `pump_station_002` |
 | **Khay** | (chốt trước) | Mục tiêu DUY NHẤT: mọi hạt RA HẾT không đọng; **BỎ lưới giữ hạt** | Khe khuếch tán vào + cổng ra sát đáy + fillet R≥2.5; không chi tiết níu hạt |
 | **Xử lý ảnh** | (chốt trước) | Hybrid: classical CV đếm+đo + classifier nhỏ phân loại | (không thuộc mô hình 3D) |
 

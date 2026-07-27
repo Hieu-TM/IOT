@@ -41,7 +41,7 @@
 
 ## Vì sao hướng 1D hấp dẫn cho project này
 
-- **Né đúng blocker hiện tại:** memory `camera-focus-limit` — lens OV3660 không nét ở 3–5cm.
+- **Né đúng blocker hiện tại:** memory `camera-focus-limit` — lens OV2640 không nét ở 3–5cm.
   Photodiode 1D không cần lấy nét → xoá vấn đề.
 - Nhẹ RAM/Flash, hợp ESP32-S3, chạy liên tục tốc độ cao.
 

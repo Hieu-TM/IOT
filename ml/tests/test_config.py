@@ -147,3 +147,81 @@ def test_env_leaves_batch_lot_as_string(tmp_path):
                       env={"AQUA_INGEST_BATCH_LOT": "123"})
     assert cfg.get("ingest", "batch_lot") == "123"
     assert isinstance(cfg.get("ingest", "batch_lot"), str)
+
+
+def test_station_defaults_present():
+    """Mặc định của [station] có trong DEFAULTS, không cần file cấu hình nào."""
+    cfg = cfgmod.load(config_path=None, env={})
+    assert cfg.get("station", "host") == ""
+    assert cfg.get("station", "timeout_s") == 20
+    assert cfg.get("station", "retries") == 3
+    assert cfg.get("station", "interval_s") == 2.0
+
+
+def test_station_section_is_read_from_config_file(tmp_path):
+    """File cấu hình phải thực sự đè được lên DEFAULTS.
+
+    Giá trị trong file cố ý KHÁC DEFAULTS. Bản đầu của test này dùng giá trị
+    trùng DEFAULTS nên luôn xanh kể cả khi file không hề được đọc (_read_toml
+    nuốt lỗi file-not-found và trả {}) — tức là nó không kiểm được gì cả.
+    """
+    p = _write(tmp_path / "config.toml",
+               '[station]\nhost = "192.168.1.77"\ntimeout_s = 45\n'
+               'retries = 9\ninterval_s = 0.5\n')
+    cfg = cfgmod.load(p, env={})
+    assert cfg.get("station", "host") == "192.168.1.77"
+    assert cfg.get("station", "timeout_s") == 45
+    assert cfg.get("station", "retries") == 9
+    assert cfg.get("station", "interval_s") == 0.5
+
+
+def test_station_env_vars_are_coerced_to_the_right_types(tmp_path):
+    """Biến môi trường đến dưới dạng chuỗi và phải được ép về đúng kiểu.
+
+    Nếu không ép, `timeout_s` thành chuỗi "45" rồi đi thẳng vào tham số timeout
+    của requests — hỏng ở tận nơi khác, khó lần ngược.
+    """
+    p = _write(tmp_path / "config.toml", "")
+    cfg = cfgmod.load(p, env={
+        "AQUA_STATION_HOST": "10.0.0.5",
+        "AQUA_STATION_TIMEOUT_S": "45",
+        "AQUA_STATION_RETRIES": "9",
+        "AQUA_STATION_INTERVAL_S": "0.5",
+    })
+    assert cfg.get("station", "host") == "10.0.0.5"
+    assert cfg.get("station", "timeout_s") == 45
+    assert isinstance(cfg.get("station", "timeout_s"), int)
+    assert cfg.get("station", "retries") == 9
+    assert cfg.get("station", "interval_s") == 0.5
+    assert isinstance(cfg.get("station", "interval_s"), float)
+
+
+def test_missing_for_station_flags_empty_host():
+    cfg = cfgmod.Config({"station": {"host": ""}})
+    problems = cfg.missing_for("station")
+    assert len(problems) == 1
+    assert "station.host" in problems[0]
+
+
+def test_missing_for_station_ok_when_host_set():
+    cfg = cfgmod.Config({"station": {"host": "192.168.1.50"}})
+    assert cfg.missing_for("station") == []
+
+
+def test_missing_for_station_host_param_overrides_config_value():
+    # cfg.station.host trống, nhưng caller (cli.py) truyền vào host hiệu
+    # dụng đã áp thứ tự ưu tiên cờ CLI > env > config.local > config > mặc
+    # định (vd host đến từ --from-board). Không được báo thiếu trong ca này -
+    # đây chính là lỗi "check-config --from-board tự mâu thuẫn" đã sửa.
+    cfg = cfgmod.Config({"station": {"host": ""}})
+    assert cfg.missing_for("station", station_host="10.0.0.5") == []
+
+
+def test_missing_for_station_host_param_empty_still_flags_missing():
+    # host hiệu dụng thật sự rỗng (không cờ, không config) - vẫn phải báo thiếu.
+    cfg = cfgmod.Config({"station": {"host": "192.168.1.50"}})  # cfg CÓ host...
+    # ...nhưng caller truyền station_host="" (vd đã tự tính effective host và
+    # nó rỗng) - tham số phải thắng, không được âm thầm rơi về cfg.
+    problems = cfg.missing_for("station", station_host="")
+    assert len(problems) == 1
+    assert "station.host" in problems[0]

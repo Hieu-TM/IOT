@@ -554,9 +554,11 @@ def sample_detail(
 
 @router.get("/stream", response_class=HTMLResponse)
 def stream(request: Request):
-    # Pure-frontend demo — no DB access, no new endpoint (frontend design §2.4).
+    # No DB access, no new endpoint: the page fetches station_host itself from
+    # the existing /api/settings and points an <img> straight at the board's
+    # own MJPEG server (2026-07-27 design — see docs/superpowers/specs).
     return templates.TemplateResponse(
-        request, "stream.html", {"screen": "stream", "title": "Stream demo"}
+        request, "stream.html", {"screen": "stream", "title": "Live view"}
     )
 
 

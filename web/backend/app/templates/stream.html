@@ -3,52 +3,45 @@
 {% block content %}
 <div class="page stack" style="gap:16px">
 
-  <div class="demo-banner">
+  <div class="info-banner">
     <span style="flex:none;color:var(--amber-text);margin-top:1px">{{ icon('warn') }}</span>
     <div>
-      <div class="b-title">Chế độ demo — mô phỏng, không ghi vào lịch sử.</div>
-      <div class="b-sub">Đây không phải detection thật và không phải bản ghi audit. Dùng để trình chiếu dòng chảy backlit.</div>
+      <div class="b-title">Stream thô từ camera — không suy luận, không overlay.</div>
+      <div class="b-sub">Đây là hình ảnh trực tiếp từ board, KHÔNG chạy đếm/phân loại real-time trên luồng này. Số hạt và phân loại chỉ có ở luồng chụp-suy luận theo chu kỳ bơm — xem panel điều khiển ở trang chủ hoặc chi tiết từng mẫu.</div>
     </div>
   </div>
 
   <section class="card">
-    <div class="stream-stage">
-      <canvas id="stream-canvas" class="stream-canvas"></canvas>
-      <div class="stream-hud">
-        <div class="hud-card">
-          <div class="hud-metric"><span class="k">Đang thấy</span><span class="v" id="hud-count">0</span></div>
-          <div class="hud-sep"></div>
-          <div class="hud-metric"><span class="k">FPS</span><span class="v" id="hud-fps">0</span></div>
-        </div>
-        <div class="hud-pill"><div id="hud-dist"><span class="hud-empty">Chưa có hạt trong khung</span></div></div>
+    <div class="stream-stage" id="stream-stage">
+      <img id="stream-img" class="stream-canvas" alt="Live view từ board" hidden>
+
+      <div class="state-block stream-state" id="stream-empty" hidden>
+        <div class="state-icon">{{ icon('wave', 30) }}</div>
+        <div class="state-title">Chưa cấu hình địa chỉ board</div>
+        <p class="state-msg">Vào trang chủ để nhập IP/hostname hoặc bấm "Dò" trước khi xem live.</p>
+        <a class="btn btn-primary" href="/">Về trang chủ</a>
       </div>
-      <div class="pause-overlay" id="pause-overlay" hidden>
-        <span class="pause-pill">Đã tạm dừng · nhấn Bật stream</span>
+
+      <div class="state-block stream-state" id="stream-error" hidden>
+        <div class="state-icon">{{ icon('warn', 30) }}</div>
+        <div class="state-title">Không kết nối được tới board</div>
+        <p class="state-msg" id="stream-error-msg"></p>
+        <button class="btn" id="stream-retry" type="button">Thử lại</button>
       </div>
     </div>
-    <div class="stream-toolbar">
-      <button type="button" id="stream-toggle" class="btn stream-btn">
-        <span id="stream-icon">{{ icon('wave') }}</span><span id="stream-label">Bật stream</span>
-      </button>
-      <button type="button" id="det-toggle" class="switch-btn">
-        <span class="switch" id="det-switch"><span class="knob"></span></span>Hiện detection
-      </button>
-      <div class="spacer"></div>
-      <label class="speed-field">Tốc độ
-        <input type="range" id="speed" min="0.4" max="3" step="0.1" value="1.4">
-        <span class="speed-val" id="speed-val">1.4×</span>
-      </label>
+    <div class="stream-toolbar" id="stream-toolbar" hidden>
+      <span class="hint-caption" id="stream-host-label"></span>
     </div>
   </section>
 
   {{ note([
-    'Thuần frontend (canvas + vanilla JS): mô phỏng dòng chảy backlit, không gọi backend, không ghi DB — bảo toàn nguyên tắc append-only.',
-    'Toggle "Hiện detection" cho phép cú "reveal" khi trình chiếu: bật stream thấy dòng chảy, gạt detection thì bbox màu theo loại hiện đè lên.',
-    'Dùng đúng bảng màu nhãn và hệ số 14 px/mm như mock_sender để stream và ảnh tĩnh trông cùng một hệ. Điểm mở rộng: thay nền canvas bằng MJPEG thật của ESP32.',
+    'Live view thật: <img> trỏ thẳng vào server MJPEG có sẵn trên board (cổng chính + 1, xem firmware/aqua_scope_station/app_httpd.cpp) — trình duyệt tự giải mã multipart/x-mixed-replace, không qua backend, không JS decode thủ công.',
+    'station_host lấy từ GET /api/settings (cùng nguồn với panel điều khiển) — đổi IP/dò board ở trang chủ sẽ phản ánh sang đây ở lần tải trang kế tiếp.',
+    'Thay cho bản demo canvas mô phỏng cũ (stream_sim.js, đã xoá): bản đó tự sinh hạt giả, không gọi backend, dễ gây hiểu lầm là suy luận thật.',
   ]) }}
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/stream_sim.js"></script>
+<script src="/static/js/stream_live.js"></script>
 {% endblock %}

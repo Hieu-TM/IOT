@@ -54,15 +54,15 @@ struct CamConfig {
   int  framesize;      // độ phân giải dùng chung (giá trị enum framesize_t, xem HTML select)
 };
 
-// Giá trị mặc định "an toàn" cho backlit silhouette (nền sáng, phơi sáng thấp).
+// Giá trị mặc định — auto exposure/gain/white balance (không ép dark).
 // Giữ const để nút "Khôi phục mặc định" luôn có bản gốc mà quay về.
 const CamConfig DEFAULT_CFG = {
-  .exposure   = 100,
+  .exposure   = 300,
   .gain       = 0,
   .brightness = 0,
-  .contrast   = 1,
+  .contrast   = 0,
   .jpegQuality= 12,
-  .grayscale  = 1,
+  .grayscale  = 0,                       // 0 = ảnh màu (không ép xám)
   .hmirror    = 0,
   .vflip      = 1,                       // OV3660 mặc định ảnh lật ngược -> vflip=1 cho đúng chiều
   .framesize  = (int)FRAMESIZE_VGA,      // mặc định VGA; đổi tự do khi test (tới QXGA)
@@ -131,53 +131,18 @@ void resetConfig() {
 }
 
 // ----------------------------------------------------------------------------
-// 4) ÁP cấu hình lên sensor. Đây là TRÁI TIM của firmware này:
-//    ép phơi sáng thủ công để nền backlit không cháy trắng.
+// 4) ÁP cấu hình lên sensor.
+//    Giống bản dataset_collector/firmware: KHÔNG ép AEC/AGC/AWB, để sensor
+//    tự chạy auto mặc định. Chỉ set các thông số cơ bản.
 // ----------------------------------------------------------------------------
 void applyConfig() {
   sensor_t* s = esp_camera_sensor_get();
   if (!s) return;
 
-  if (aimingMode) {
-    // ====== CHẾ ĐỘ NGẮM/LẤY NÉT (tạm thời) ======
-    // Bật auto everything + ảnh màu để nhìn rõ mà căn khung và lấy nét (đặt mẫu
-    // đúng ~4cm cho sắc nét). Đây KHÔNG phải chế độ chụp phân tích.
-    s->set_whitebal(s, 1);
-    s->set_awb_gain(s, 1);
-    s->set_wb_mode(s, 0);
-    s->set_exposure_ctrl(s, 1);          // BẬT AEC
-    s->set_aec2(s, 1);                    // BẬT AEC DSP
-    s->set_gain_ctrl(s, 1);              // BẬT AGC
-    s->set_gainceiling(s, GAINCEILING_16X);
-    s->set_special_effect(s, 0);         // màu, dễ nhìn để căn
-  } else {
-    // ====== CHẾ ĐỘ CHỤP BACKLIT SILHOUETTE (mặc định) ======
-    // --- Cân bằng trắng: TẮT để nền không "tự sửa màu" trôi giá trị ---
-    s->set_whitebal(s, 0);
-    s->set_awb_gain(s, 0);
-    s->set_wb_mode(s, 0);
-
-    // --- PHƠI SÁNG THỦ CÔNG (quan trọng nhất) ---
-    s->set_exposure_ctrl(s, 0);          // TẮT AEC (auto exposure)
-    s->set_aec2(s, 0);                   // TẮT AEC DSP
-    s->set_gain_ctrl(s, 0);              // TẮT AGC (auto gain)
-    s->set_agc_gain(s, cfg.gain);        // gain thủ công
-    s->set_aec_value(s, cfg.exposure);   // exposure thủ công
-    s->set_gainceiling(s, GAINCEILING_2X); // trần gain thấp
-
-    // --- Ép ảnh xám cho silhouette / CV (special_effect 2 = grayscale) ---
-    s->set_special_effect(s, cfg.grayscale ? 2 : 0);
-  }
-
-  // --- Chỉnh nét/độ tương phản để tách bóng hạt (dùng chung cho cả 2 chế độ) ---
+  // --- Các thông số cơ bản (giống dataset_collector/firmware) ---
   s->set_brightness(s, cfg.brightness);
   s->set_contrast(s, cfg.contrast);
-  s->set_bpc(s, 1);
-  s->set_wpc(s, 1);
-  s->set_raw_gma(s, 1);
-  s->set_lenc(s, 1);                     // bù sáng viền ống kính -> nền đều hơn
-  s->set_dcw(s, 1);
-  s->set_colorbar(s, 0);
+  s->set_special_effect(s, cfg.grayscale ? 2 : 0);
 
   s->set_hmirror(s, cfg.hmirror);
   s->set_vflip(s, cfg.vflip);

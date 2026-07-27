@@ -1,5 +1,8 @@
 # Aqua Scope Cam — Firmware
 
+> **Tham khảo/thử nghiệm — không nạp bản này.** Firmware chính thức của dự án
+> là [`firmware/aqua_scope_station/`](../aqua_scope_station/).
+
 Firmware camera tùy chỉnh cho **XIAO ESP32-S3 Sense** (cảm biến **OV3660**, 3MP), thay cho firmware
 Matchboxscope (vốn dành cho kính hiển vi). Tối ưu cho **ảnh backlit silhouette**:
 nền sáng đều, hạt rác 1–5mm hiện lên thành **bóng đen** để đếm & đo kích thước.

@@ -62,6 +62,61 @@ fillet_r     = 2.5;   // bo góc đáy–thành ≥2.5 (chống đọng)
 weir_h       = 6.0;   // mép tràn TÙY CHỌN (chặn-tràn an toàn) — không bắt buộc
 drain_port_d = 8.0;   // van xả đáy TÙY CHỌN (vệ sinh) — không thuộc chu trình
 
+// ---------------------------------------------------------------- CHỐNG SÓNG (2026-07-23)
+// Nguồn: docs/research/2026-07-23-khay-lang-song-nghien-cuu-hop-nhat.md
+// ⚠️ 4 số dưới đây LỆCH CÓ CHỦ Ý so với tài liệu nghiên cứu — lý do ghi tại chỗ.
+particle_max = 2.0;    // hạt lớn nhất trong phạm vi test (CLAUDE.md: <2mm)
+
+// (e) Cửa vào ĐỤC LỖ — thay khe hở liền 20×3 bằng N cửa sổ ngăn bởi gân.
+// Chia tia nước lớn thành nhiều tia nhỏ → tiêu tán động năng nhanh hơn nhiều.
+inlet_rib_t  = 1.2;    // bề dày gân giữa 2 cửa sổ (3 perimeter × nozzle 0.4)
+inlet_gap_w  = 3.5;    // ⚠️ LỆCH tài liệu (2.5): 2.5 chỉ dư 0.5mm so hạt 2mm, NGAY
+                       // CỬA VÀO. Hạt nghẽn ở đây = không vào khay = không đếm được
+                       // (hỏng chính phép đo, tệ hơn kẹt ở cửa ra). 3.5 = 1.75× hạt.
+inlet_n_gap  = 4;      // số cửa sổ
+inlet_pitch  = inlet_gap_w + inlet_rib_t;                              // = 4.7
+inlet_span   = inlet_n_gap * inlet_gap_w + (inlet_n_gap - 1) * inlet_rib_t;  // = 17.6
+
+// (c) VÁCH CONG tiêu năng — chắn đường đi thẳng cổng vào → cổng ra (short-circuiting)
+baffle_t     = 1.2;    // bề dày vách (3 perimeter FDM)
+baffle_r_mid = 16.4;   // ⚠️ LỆCH tài liệu (17.6): 17.6 → hành lang chỉ 1.8mm < hạt
+                       // 2mm ⇒ hạt KHÔNG lọt, kẹt trong túi cổng vào (lối thoát duy
+                       // nhất) ⇒ vi phạm ràng buộc cứng "mọi hạt ra hết".
+                       // GIÁ PHẢI TRẢ: vùng ảnh hóa Ø40 → Ø31.6. Chỉnh tham số này
+                       // sau khi in thử nếu muốn đổi cân bằng.
+baffle_h     = 7.0;    // ⚠️ LỆCH tài liệu (5.0): 5.0 < mực nước 6 ⇒ ~50% lưu lượng
+                       // tràn qua NÓC vách, xả động năng thẳng vào MẶT NƯỚC (chỗ cần
+                       // phẳng nhất). Lý do "thoát bọt" của tài liệu không áp dụng vì
+                       // vách là HÀNG RÀO HỞ 2 ĐẦU, bọt thoát tự do quanh 2 đầu mút.
+baffle_angle = 90;     // góc quét cung (độ), tâm tại −X (đối diện cổng vào)
+                       // Bo 2 đầu mút: bán nguyệt r = baffle_t/2 = 0.6 — ⚠️ tài liệu
+                       // ghi fillet_r=2.0 là BẤT KHẢ THI trên vách dày 1.2mm.
+baffle_corridor = tray_inner/2 - (baffle_r_mid + baffle_t/2);  // DẪN XUẤT = 3.0
+
+// GỜ NỐI (rib) nối vách cong vào thành khay — sửa lỗi Critical: vách cong KHÔNG
+// chạm gì (đáy khay hở, đối diện bellmouth) → 2 khối rời (CGAL Volumes=3), sẽ in
+// thành mảnh nhựa RỜI rơi vào lòng khay rồi trôi ra kẹt cổng Ø6. 3 gờ nối vách↔
+// thành, đặt Ở TRÊN MẶT NƯỚC (z: water_depth → baffle_h — vách cao hơn nước đúng
+// để chừa khoảng này) nên hạt (luôn ngập nước, di chuyển ở z<water_depth) không
+// bao giờ chạm gờ; hành lang baffle_corridor 3.0mm dưới mực nước vẫn thông suốt
+// 100% theo chiều sâu ngập z=0..water_depth. TUYỆT ĐỐI không hạ z dưới xuống
+// dưới water_depth — làm vậy là tái tạo đúng lỗi Critical đã sửa ở đây.
+baffle_rib_n      = 3;              // số gờ nối
+baffle_rib_w      = 3.0;            // bề rộng tiếp tuyến mỗi gờ (đủ khỏe, ≥ nozzle×~7)
+baffle_rib_angles = [150, 180, 210]; // góc đặt gờ (độ) — trong khoảng quét vách 135°–225°
+// Đáy gờ TÁCH RIÊNG khỏi water_depth (không viết thẳng water_depth trong module)
+// để assert bên dưới có ý nghĩa thật: nếu sau này ai "dọn gọn" hạ đáy gờ xuống
+// (vd đổi thành water_depth − 1) thì assert bắt được ngay khi render, thay vì
+// một assert luôn-đúng không bao giờ fail.
+baffle_rib_z_bot  = water_depth;    // đáy gờ (mm) — PHẢI ≥ water_depth, xem assert
+
+// (Bellmouth) MIỆNG LOE cổng RA — chống dồn ứ + dội sóng ngược tại miệng lỗ xả
+// Nhô VÀO lòng khay (KHÔNG khoét lõm vào thành): thành chỉ dày 2mm, khoét lõm bo
+// R=3 sẽ ăn hết thịt quanh ngạnh OD8 (còn ~0.25mm) → vỡ khi in/dùng.
+bell_fillet_r = 3.0;   // bán kính bo loe (r/d = 0.5 ≫ ngưỡng 0.15 ⇒ K: 0.5 → <0.05)
+bell_wall     = 1.2;   // bề dày vỏ loa kèn (3 perimeter)
+bell_steps    = 24;    // số đoạn xấp xỉ cung 90° khi revolve
+
 // ---------------------------------------------------------------- Đáy acrylic (cửa sổ tròn) + vòng ép
 tray_win_d = 42.0;   // đĩa acrylic TRONG, > tray_inner để chồng gờ
                      // (Ø42 là TỐI ĐA khả thi: OD khay 44 − 2×(0.35 khe + 0.65 thịt hốc);
@@ -108,6 +163,76 @@ sil_tube_od = 11.0;
 pump_bbox   = [90, 40, 35]; // placeholder bơm màng RS365 12V MUA SẴN (không in)
 pump_barb_od = 8.0;         // ngạnh cổng vào/ra bơm (OD)
 // Điện (không thuộc mô hình): relay module 1 kênh (demo), 12V/2A, tụ 0.1µF ngang bơm.
+
+// ---------------------------------------------------------------- Trạm bơm gọn: đế liền + hộp L298N + kẹp bơm (2026-07-24)
+// Nguồn: docs/superpowers/specs/2026-07-24-pump-station-mount-design.md
+// ⚠️ l298n_* và pump_motor_od là số ĐIỂN HÌNH/ƯỚC TÍNH — CHƯA ĐO board/bơm thật.
+// Hộp L298N cố ý rộng rãi (l298n_box_clr_x/y) để chịu sai số; yên kẹp bơm có rãnh
+// zip-tie bù sai số đường kính nếu bơm thật khác pump_motor_od.
+// (2026-07-25: l298n_box_clr tách thành 2 trục — xem docs/superpowers/specs/
+// 2026-07-25-pump-station-wire-shroud-design.md mục Kiến trúc §3.)
+l298n_l             = 43.0;  // dài board L298N (điển hình, chưa đo)
+l298n_w             = 43.0;  // rộng board
+l298n_h             = 27.0;  // cao kể cả tản nhiệt nhô lên
+l298n_box_wall      = 2.0;   // thành hộp
+l298n_box_clr_x     = 8.0;   // khe hở cạnh X (IN 12V / OUT động cơ — có domino nhô ra, cần chỗ bẻ dây)
+l298n_box_clr_y     = 4.0;   // khe hở cạnh Y (LOGIC + thoát khí — không có domino nhô ra)
+l298n_foot_h        = 2.0;   // gờ đỡ góc board bên trong hộp
+l298n_lid_t         = 2.0;   // dày nắp hộp
+l298n_lid_screw_d   = 2.8;   // lỗ tự-ren M3 giữ nắp (2 góc chéo, trong gờ hộp)
+l298n_lid_clr_d     = 3.2;   // lỗ thông M3 trên nắp
+l298n_vent_w        = 3.0;   // bề rộng mỗi khe thoát khí
+l298n_vent_n        = 5;     // số khe thoát khí (cạnh đối diện khe dây logic)
+
+wire_notch_w        = 6.0;   // bề rộng khe dây IN(12V)/OUT(động cơ) — dây trần/cosse
+wire_notch_h        = 5.0;   // sâu khe dây IN/OUT
+wire_notch_logic_w  = 14.0;  // bề rộng khe dây LOGIC — đủ ôm 3-4 đầu jumper (ENA/IN1/IN2/GND)
+wire_notch_logic_h  = 6.0;   // sâu khe dây LOGIC
+l298n_wire_anchor_d = 6.0;   // Ø trụ neo bó dây logic ngay ngoài khe LOGIC
+
+pump_motor_od       = 31.5;  // Ø thân trụ động cơ RS365 — ƯỚC TÍNH pump_bbox[2]*0.9 = 35*0.9,
+                              // CHƯA ĐO bơm thật
+pump_clamp_clr      = 1.0;   // khe hở giữa lòng máng kẹp và thân bơm
+pump_clamp_t        = 2.4;   // bề dày thành máng kẹp (dưới lỗ khoan)
+pump_clamp_w        = 8.0;   // bề rộng (dọc trục bơm) mỗi yên kẹp
+pump_clamp_slot_w   = 24.0;  // bề rộng khe lồng từ đỉnh khối xuống lỗ khoan — HẸP HƠN
+                              // pump_clamp_id để PETG hơi dẻo ép giữ bơm khi lồng từ trên
+pump_clamp_strap_w  = 3.0;   // rãnh trên đỉnh yên để luồn zip-tie xiết thêm (bù sai số Ø bơm thật)
+pump_clamp_gap      = 40.0;  // khoảng cách tâm 2 yên kẹp dọc trục bơm
+pump_clamp_wire_notch_w = 4.0;                // bề rộng khe xuyên đáy máng kẹp nối lòng máng ↔ kênh dây
+pump_clamp_wire_notch_h = pump_clamp_t + 2.0; // sâu khe — GIÁ TRỊ KHỞI ĐIỂM, chỉnh theo preview-scad
+
+pump_station_base_t = 3.0;   // dày đế
+pump_station_foot_h = 2.0;   // chân đế 4 góc
+pump_station_gap     = 20.0; // rãnh dây giữa hộp L298N và cụm yên kẹp bơm
+pump_station_margin  = 4.0;  // biên đế quanh hộp/yên kẹp (mép ngoài cùng)
+
+wire_channel_w              = 10.0;  // bề rộng lòng kênh dây liền mạch (đủ 2-3 đầu jumper cạnh nhau)
+wire_channel_d               = 2.0;  // sâu kênh dây (khoét vào mặt đế)
+wire_channel_rail_w         = 2.0;   // bề rộng gờ ray 2 bên miệng kênh (đỡ nắp đậy)
+wire_channel_rail_h         = 1.5;   // cao gờ ray nhô lên khỏi mặt đế = dày nắp đậy
+wire_cover_fit_interference = 0.3;   // nắp kênh dây rộng hơn khe giữa 2 ray — PETG đàn hồi ép giữ
+
+// Dẫn xuất — hộp L298N (đáy hộp = mặt đế, KHÔNG có sàn riêng)
+l298n_box_id_l = l298n_l + 2*l298n_box_clr_x;                 // = 59
+l298n_box_id_w = l298n_w + 2*l298n_box_clr_y;                 // = 51
+l298n_box_h    = l298n_h + l298n_foot_h + 3.0;                // = 32: cao thành từ mặt đế tới miệng hộp
+l298n_box_od_l = l298n_box_id_l + 2*l298n_box_wall;           // = 63
+l298n_box_od_w = l298n_box_id_w + 2*l298n_box_wall;           // = 55
+
+// Dẫn xuất — yên kẹp bơm (khối vuông, tâm lỗ khoan = pump_clamp_od/2 → đối xứng
+// trên/dưới → thành dưới lỗ khoan luôn dày đúng bằng pump_clamp_t, không phụ thuộc
+// số đo pump_bbox — ưu tiên AN TOÀN KẾT CẤU hơn khớp pixel với model placeholder)
+pump_clamp_id = pump_motor_od + 2*pump_clamp_clr;   // = 33.5: Ø lòng máng kẹp
+pump_clamp_od = pump_clamp_id + 2*pump_clamp_t;     // = 38.3: Ø ngoài máng kẹp = tổng cao khối yên
+
+// Dẫn xuất — bố cục đế (đơn vị mm)
+pump_station_len = pump_station_margin + l298n_box_od_l + pump_station_gap
+                   + pump_clamp_gap + pump_clamp_w + pump_station_margin;   // = 139
+// Bề rộng đế: nửa-rộng lớn nhất giữa (a) hộp L298N + trụ neo dây logic nhô ra cạnh
+// +Y, (b) bán kính yên kẹp bơm — nhân đôi để đối xứng qua tâm.
+pump_station_wid = 2*max(l298n_box_od_w/2 + l298n_wire_anchor_d + 2, pump_clamp_od/2)
+                   + 2*pump_station_margin;   // = 79
 
 // ---------------------------------------------------------------- BIẾN THỂ ESP32-CAM (tùy chọn — KHÔNG ảnh hưởng baseline XIAO)
 // Nắp adapter in mới `top_cap_esp32cam` thay cho base Matchboxscope khi dùng
@@ -246,7 +371,44 @@ assert(fov_w_est <= tube_id + 0.01, "nón FOV không được chạm thành ốn
 assert(water_depth < tray_depth, "mực nước phải thấp hơn thành khay");
 assert(outlet_bore >= 3 * 2.0 - 0.01, "lòng cổng ra ≥ 3× hạt 2mm (chống kẹt)");
 assert(bl_diff_d >= tray_inner, "tấm khuếch tán phải phủ hết vùng ảnh hóa");
+
+// --- Assert an toàn hạt cho cụm chống sóng (2026-07-23) ---
+assert(inlet_gap_w >= 1.5 * particle_max,
+       "cửa sổ vào phải ≥1.5× hạt — nghẽn ở CỬA VÀO nghĩa là hạt không vào được khay, hỏng phép đếm");
+assert(inlet_slot_h >= 1.5 * particle_max,
+       "chiều cao cửa sổ vào cũng là lối hạt phải chui qua — phải ≥1.5× hạt, không chỉ riêng bề rộng inlet_gap_w");
+assert(inlet_span <= inlet_slot_w,
+       "cụm cửa sổ + gân phải nằm gọn trong bề rộng khe vào 20mm");
+assert(baffle_corridor >= 1.5 * particle_max,
+       "hành lang sau vách cong phải ≥1.5× hạt — đây là lối thoát DUY NHẤT của túi cổng vào");
+assert(baffle_h > water_depth,
+       "vách phải CAO HƠN mực nước, nếu không dòng tràn qua nóc đập thẳng vào mặt nước");
+assert(baffle_rib_z_bot >= water_depth,
+       "đáy gờ nối vách↔thành PHẢI ≥ mực nước — hạ xuống dưới mực nước là gờ cắt");
+assert((baffle_r_mid - baffle_t/2) * 2 >= 25.0,
+       "vùng ảnh còn lại (đường kính trong của vách) phải ≥25mm — vách đẩy vào sâu quá thì không còn chỗ soi hạt");
+assert(bell_fillet_r >= 0.15 * outlet_bore,
+       "bo loe phải đủ tròn (r/d ≥ 0.15) mới hạ được hệ số tổn thất K");
+
 assert(led_mod_w + 2*shelf_hole_clr < tray_inner, "lỗ vách module phải nằm gọn trong lòng");
+
+// --- Assert an toàn cho trạm bơm gọn (2026-07-24) ---
+assert(l298n_box_id_l > l298n_l && l298n_box_id_w > l298n_w,
+       "khoang hộp L298N phải rộng hơn board (có khe hở dung sai lắp)");
+assert(pump_clamp_slot_w < pump_clamp_id,
+       "khe lồng yên kẹp phải HẸP HƠN Ø lỗ khoan mới giữ được bơm bằng ép đàn hồi");
+assert(pump_clamp_id > pump_motor_od,
+       "lòng máng kẹp phải lớn hơn Ø thân bơm (có khe hở lắp pump_clamp_clr)");
+assert(pump_clamp_od/2 - pump_clamp_id/2 >= 2.0,
+       "thành dưới yên kẹp (dưới lỗ khoan) phải dày ≥2mm để không vỡ khi ép bơm vào");
+assert(pump_clamp_gap > pump_clamp_w,
+       "2 yên kẹp không được chồng lên nhau dọc trục bơm");
+assert(pump_station_wid > pump_clamp_od && pump_station_wid > l298n_box_od_w,
+       "đế phải rộng hơn cả hộp L298N lẫn yên kẹp bơm (không hụt biên)");
+assert(pump_clamp_wire_notch_w < pump_clamp_w,
+       "khe dây xuyên đáy yên kẹp phải hẹp hơn bề rộng yên kẹp (không cắt lủng 2 đầu)");
+assert(pump_station_wid/2 >= l298n_box_od_w/2 + l298n_wire_anchor_d + 2,
+       "đế phải đủ rộng để chứa trụ neo dây logic ngoài hộp L298N");
 
 echo(str("== Aqua Scope constants OK == tube OD/ID/H = ", tube_od, "/", tube_id, "/", tube_h,
          " | z_lens = ", z_lens, " | tray outer/inner = ", tray_outer, "/", tray_inner));

@@ -1,0 +1,78 @@
+{# Panel điều khiển trạm — nằm NGOÀI nhánh {% if empty %} của index.html:
+   lúc chưa có mẫu nào chính là lúc cần nút Bắt đầu nhất. #}
+<section class="card" id="control-panel" style="margin-bottom:20px"
+         data-latest-code="{{ latest.code if latest is defined else '' }}">
+  <div class="card-head">
+    <h2 class="card-title">Điều khiển trạm</h2>
+    <span class="chip" id="runner-state">— đang tải</span>
+    <div class="spacer"></div>
+    <span class="hint-caption" id="runner-counters"></span>
+  </div>
+
+  <div class="cp-grid">
+    <div class="cp-field">
+      <label class="cp-label" for="cp-host">Địa chỉ board</label>
+      <div class="cp-row">
+        <input class="cp-input mono" id="cp-host" type="text"
+               placeholder="aqua-scope.local" autocomplete="off">
+        <button class="btn" id="btn-probe" type="button">Dò</button>
+      </div>
+      <span class="hint-caption" id="cp-board-info">chưa kết nối</span>
+    </div>
+
+    <div class="cp-field">
+      <label class="cp-label" for="cp-lot">Mã lô</label>
+      <input class="cp-input mono" id="cp-lot" type="text" placeholder="LOT-001"
+             autocomplete="off">
+      <span class="hint-caption">ghi kèm mọi mẫu của lượt đo này</span>
+    </div>
+
+    <div class="cp-field">
+      <span class="cp-label">Chế độ</span>
+      <div class="cp-row" role="radiogroup" aria-label="Chế độ chạy">
+        <button class="btn cp-mode active" id="btn-mode-preview" type="button"
+                role="radio" aria-checked="true">Xem</button>
+        <button class="btn cp-mode" id="btn-mode-measure" type="button"
+                role="radio" aria-checked="false">Đo</button>
+      </div>
+      <span class="hint-caption" id="cp-mode-hint">
+        Xem: suy luận liên tục, <strong>không ghi</strong> vào sổ audit.
+      </span>
+    </div>
+
+    <div class="cp-field">
+      <span class="cp-label">Chạy</span>
+      <div class="cp-row">
+        <button class="btn btn-primary" id="btn-start" type="button">Bắt đầu</button>
+        <button class="btn" id="btn-stop" type="button" disabled>Dừng</button>
+      </div>
+      <span class="hint-caption" id="cp-phase">pha bơm: —</span>
+    </div>
+
+    <div class="cp-field cp-wide">
+      <span class="cp-label">Lệnh trạm</span>
+      <div class="cp-row cp-wrap">
+        <button class="btn" id="btn-darkmode" type="button" aria-pressed="false">Canh sáng buồng tối</button>
+        <button class="btn" id="btn-save" type="button" aria-pressed="false">Lưu vào flash</button>
+        <button class="btn" id="btn-pump-on" type="button" aria-pressed="false">Bơm auto BẬT</button>
+        <button class="btn" id="btn-pump-off" type="button" aria-pressed="false">Bơm auto TẮT</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cp-warnings" class="cp-warnings" hidden></div>
+
+  <div class="cp-live" id="cp-live" hidden>
+    <div class="cp-live-img">
+      <img id="cp-preview" alt="Khung vừa chụp" src="">
+    </div>
+    <div class="cp-live-meta">
+      <div class="meta-list">
+        <div class="meta-row"><span class="meta-k">Mã mẫu</span><span class="meta-v mono" id="cp-last-code">—</span></div>
+        <div class="meta-row"><span class="meta-k">Số hạt</span><span class="meta-v" id="cp-last-count">—</span></div>
+        <div class="meta-row"><span class="meta-k">Ghi sổ</span><span class="meta-v" id="cp-last-written">—</span></div>
+      </div>
+      <button class="btn" id="btn-keep" type="button" hidden>Lưu mẫu này vào sổ</button>
+    </div>
+  </div>
+</section>

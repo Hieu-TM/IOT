@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F4F5F3; --surface:#FFFFFF; --surface-1:#F0F1EE; --surface-2:#E9EAE6;
+  --border:rgba(24,26,22,.10); --border-strong:rgba(24,26,22,.18);
+  --text:#1B1D19; --text-2:#5C5E58; --text-3:#8A8C84;
+  --teal:#1D9E75; --teal-strong:#0F6E56; --teal-bg:#E1F5EE; --teal-text:#0F6E56;
+  --amber:#EF9F27; --amber-strong:#854F0B; --amber-bg:#FAEEDA; --amber-text:#854F0B;
+  --blue:#378ADD; --blue-bg:#E8F1FC; --blue-text:#1E5FA8;
+  --gray:#888780;
+  --p-plastic:#1D9E75; --p-bubble:#378ADD; --p-organic:#EF9F27; --p-fiber:#888780; --p-unknown:#B4B2A9;
+  --r-card:12px; --r-tile:8px; --r-chip:999px; --focus:#378ADD;
+  --shadow:0 1px 2px rgba(24,26,22,.05);
+}
+[data-theme="dark"]{
+  --bg:#0F1214; --surface:#171B1E; --surface-1:#1E2327; --surface-2:#262C31;
+  --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.18);
+  --text:#E7E9E6; --text-2:#A7ABA4; --text-3:#797E77;
+  --teal:#2FB88A; --teal-strong:#7FE0BD; --teal-bg:rgba(29,158,117,.16); --teal-text:#5FD3A6;
+  --amber:#F3B24D; --amber-strong:#F8CB80; --amber-bg:rgba(239,159,39,.15); --amber-text:#F3B24D;
+  --blue:#5AA2E8; --blue-bg:rgba(55,138,221,.16); --blue-text:#84B8EF;
+  --gray:#9A998F;
+  --p-plastic:#2FB88A; --p-bubble:#5AA2E8; --p-organic:#F3B24D; --p-fiber:#9A998F; --p-unknown:#B4B2A9;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Archivo,system-ui,sans-serif;background:var(--bg);color:var(--text);
+  -webkit-font-smoothing:antialiased;transition:background-color .22s ease,color .22s ease}
+a{color:var(--blue-text);text-decoration:none}
+a:hover{color:var(--teal-strong)}
+button{font-family:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:3px}
+::selection{background:var(--teal-bg);color:var(--teal-text)}
+input,select{font-family:inherit}
+@keyframes shimmer{0%{background-position:-420px 0}100%{background-position:420px 0}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.aq-scroll::-webkit-scrollbar{height:10px;width:10px}
+.aq-scroll::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:8px}
+@media(max-width:900px){
+  [data-fold="grid2"]{grid-template-columns:1fr!important}
+  [data-fold="detail2"]{grid-template-columns:1fr!important}
+  [data-fold="sticky"]{position:static!important}
+  [data-fold="sidebar"]{display:none!important}
+}
+</style>
+</helmet>
+<div style="display:flex;min-height:100vh;background:var(--bg);color:var(--text)">
+
+  <aside data-fold="sidebar" style="width:236px;flex:none;position:sticky;top:0;height:100vh;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:22px 16px">
+    <div style="display:flex;align-items:center;gap:11px;padding:2px 8px 22px">
+      <span style="flex:none">{{ brandMark }}</span>
+      <span style="display:flex;flex-direction:column;line-height:1.15">
+        <span style="font-weight:600;font-size:16px;letter-spacing:-.2px">Aqua Scope</span>
+        <span style="font-size:11.5px;color:var(--text-3);font-weight:400">Bảng điều khiển QC</span>
+      </span>
+    </div>
+
+    <nav style="display:flex;flex-direction:column;gap:2px">
+      <button onClick="{{ navDashboard }}" style="{{ navStyleDashboard }}">{{ icoGrid }}<span>Bảng điều khiển</span></button>
+      <button onClick="{{ navHistory }}" style="{{ navStyleHistory }}">{{ icoList }}<span>Lịch sử · audit</span></button>
+      <button onClick="{{ navStreamBtn }}" style="{{ navStyleStream }}">{{ icoWave }}<span>Stream demo</span></button>
+      <div style="height:1px;background:var(--border);margin:12px 8px"></div>
+      <span style="font-size:10.5px;letter-spacing:.06em;color:var(--text-3);padding:2px 10px 6px;text-transform:uppercase">Tham chiếu</span>
+      <button onClick="{{ navStates }}" style="{{ navStyleStates }}">{{ icoLayers }}<span>Trạng thái</span></button>
+    </nav>
+
+    <div style="margin-top:auto;padding:14px 10px 2px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--text-3)">
+        <span style="width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 3px var(--teal-bg)"></span>
+        aquascope-01 · trực tuyến
+      </div>
+      <div style="font-size:10.5px;color:var(--text-3);line-height:1.5">Dữ liệu chỉ đọc · append-only.<br>Không sửa, không xoá.</div>
+    </div>
+  </aside>
+
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+
+    <header style="position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:16px;padding:0 28px;height:60px;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)">
+      <h1 style="margin:0;font-size:16.5px;font-weight:600;letter-spacing:-.2px;white-space:nowrap">{{ screenTitle }}</h1>
+      <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 9px;font-size:11.5px;font-weight:500;color:var(--text-2);background:var(--surface-1);border-radius:var(--r-chip)">
+        <span style="width:6px;height:6px;border-radius:50%;background:var(--teal)"></span>LAN · demo</span>
+      <div style="flex:1"></div>
+
+      <sc-if value="{{ supportsStates }}" hint-placeholder-val="{{ true }}">
+        <label style="display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--text-2)">
+          <span style="white-space:nowrap">Xem trạng thái</span>
+          <select value="{{ stateView }}" onChange="{{ onStateChange }}" style="appearance:none;padding:6px 26px 6px 10px;font-size:12.5px;color:var(--text);background:var(--surface-1);border:1px solid var(--border);border-radius:7px;cursor:pointer;background-image:url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%238A8C84%22 stroke-width=%222%22><path d=%22M6 9l6 6 6-6%22/></svg>');background-repeat:no-repeat;background-position:right 8px center">
+            <sc-for list="{{ stateOptions }}" as="opt" hint-placeholder-count="2"><option value="{{ opt.v }}">{{ opt.t }}</option></sc-for>
+          </select>
+        </label>
+      </sc-if>
+
+      <button onClick="{{ toggleTheme }}" aria-label="Đổi giao diện sáng/tối" style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;background:var(--surface-1);border:1px solid var(--border);border-radius:8px;color:var(--text-2);cursor:pointer">{{ themeIcon }}</button>
+
+      <button onClick="{{ onExport }}" style="display:inline-flex;align-items:center;gap:7px;padding:8px 14px;font-size:13px;font-weight:500;color:#fff;background:var(--teal);border:none;border-radius:8px;cursor:pointer">{{ icoDownload }}<span>Xuất CSV</span></button>
+    </header>
+
+    <main class="aq-scroll" style="flex:1;min-width:0;overflow-x:hidden;padding:26px 28px 48px;animation:fadein .25s ease">
+
+      <!-- ============ DASHBOARD ============ -->
+      <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ true }}">
+        <div>
+          <sc-if value="{{ dashEmpty }}" hint-placeholder-val="{{ false }}">
+            {{ emptyBlock }}
+          </sc-if>
+          <sc-if value="{{ dashNormal }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:20px;max-width:1180px">
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px">
+              <sc-for list="{{ metricTiles }}" as="m" hint-placeholder-count="4">
+                <div style="{{ m.style }}">
+                  <div style="font-size:12.5px;color:var(--text-2);font-weight:400;display:flex;align-items:center;gap:6px">{{ m.icon }}<span>{{ m.label }}</span></div>
+                  <div style="font-size:30px;font-weight:600;letter-spacing:-.5px;line-height:1.1;margin-top:9px;color:{{ m.valColor }}">{{ m.value }}</div>
+                  <div style="font-size:11.5px;color:var(--text-3);margin-top:3px">{{ m.hint }}</div>
+                </div>
+              </sc-for>
+            </div>
+
+            <div data-fold="grid2" style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:20px;align-items:start">
+
+              <section style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden">
+                <div style="display:flex;align-items:center;gap:12px;padding:15px 18px;border-bottom:1px solid var(--border)">
+                  <h2 style="margin:0;font-size:14.5px;font-weight:600">Mẫu mới nhất</h2>
+                  <span style="{{ latest.chipStyle }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ latest.chipDot }}"></span>{{ latest.chipText }}</span>
+                  <div style="flex:1"></div>
+                  <a onClick="{{ navDetailLatest }}" href="#" style="font-size:12.5px;font-weight:500;color:var(--blue-text);cursor:pointer">Xem chi tiết →</a>
+                </div>
+                <div style="display:flex;gap:18px;padding:18px;flex-wrap:wrap">
+                  <div style="flex:1;min-width:240px">{{ latestImage }}</div>
+                  <div style="flex:1;min-width:210px;display:flex;flex-direction:column;gap:0;align-self:center">
+                    <sc-for list="{{ latest.meta }}" as="row" hint-placeholder-count="4">
+                      <div style="display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--border)">
+                        <span style="font-size:12.5px;color:var(--text-2)">{{ row.k }}</span>
+                        <span style="font-size:12.5px;font-weight:500;text-align:right;font-family:{{ row.mono }}">{{ row.v }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </section>
+
+              <section style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden">
+                <div style="padding:15px 18px;border-bottom:1px solid var(--border)">
+                  <h2 style="margin:0;font-size:14.5px;font-weight:600">Phân bố loại</h2>
+                  <p style="margin:3px 0 0;font-size:11.5px;color:var(--text-3)">Tổng hợp các mẫu hôm nay</p>
+                </div>
+                <div style="display:flex;align-items:center;gap:20px;padding:18px;flex-wrap:wrap">
+                  <div style="flex:none;position:relative;width:132px;height:132px">{{ donutEl }}
+                    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none">
+                      <span style="font-size:26px;font-weight:600;line-height:1">{{ donutTotal }}</span>
+                      <span style="font-size:10.5px;color:var(--text-3)">hạt</span>
+                    </div>
+                  </div>
+                  <div style="flex:1;min-width:150px;display:flex;flex-direction:column;gap:9px">
+                    <sc-for list="{{ donutLegend }}" as="l" hint-placeholder-count="4">
+                      <div style="display:flex;align-items:center;gap:9px">
+                        <span style="width:11px;height:11px;border-radius:3px;background:{{ l.color }};flex:none"></span>
+                        <span style="font-size:12.5px;flex:1">{{ l.vi }}</span>
+                        <span style="font-size:12.5px;font-weight:500;color:var(--text-2)">{{ l.pct }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <section style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden">
+              <div style="display:flex;align-items:center;padding:15px 18px;border-bottom:1px solid var(--border)">
+                <h2 style="margin:0;font-size:14.5px;font-weight:600">5 mẫu gần nhất</h2>
+                <div style="flex:1"></div>
+                <a onClick="{{ navHistory }}" href="#" style="font-size:12.5px;font-weight:500;color:var(--teal-text);cursor:pointer">Xem tất cả (lịch sử / audit) →</a>
+              </div>
+              <div class="aq-scroll" style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;min-width:640px">
+                  <thead><tr>{{ miniHead }}</tr></thead>
+                  <tbody>
+                    <sc-for list="{{ recent5 }}" as="r" hint-placeholder-count="5">
+                      <tr onClick="{{ r.open }}" style="cursor:pointer;border-top:1px solid var(--border)">
+                        <td style="padding:11px 18px;font-size:12.5px;font-family:ui-monospace,Menlo,monospace">{{ r.code }}</td>
+                        <td style="padding:11px 14px;font-size:12.5px;color:var(--text-2)">{{ r.lot }}</td>
+                        <td style="padding:11px 14px;font-size:12.5px;color:var(--text-2)">{{ r.time }}</td>
+                        <td style="padding:11px 14px;font-size:12.5px;text-align:right;font-weight:500">{{ r.count }}</td>
+                        <td style="padding:11px 14px">{{ r.status }}</td>
+                      </tr>
+                    </sc-for>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            {{ dashNote }}
+          </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <!-- ============ HISTORY ============ -->
+      <sc-if value="{{ isHistory }}" hint-placeholder-val="{{ false }}">
+        <div style="max-width:1180px">
+          <sc-if value="{{ histLoading }}" hint-placeholder-val="{{ false }}">{{ loadingTable }}</sc-if>
+          <sc-if value="{{ histError }}" hint-placeholder-val="{{ false }}">{{ errorBlock }}</sc-if>
+          <sc-if value="{{ histEmpty }}" hint-placeholder-val="{{ false }}">{{ emptyBlock }}</sc-if>
+          <sc-if value="{{ histNormal }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:16px">
+
+            <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);padding:16px 18px">
+              <label style="display:flex;flex-direction:column;gap:5px;font-size:11.5px;color:var(--text-2)">Từ ngày
+                <input type="date" value="{{ fFrom }}" onChange="{{ onFrom }}" style="padding:7px 10px;font-size:13px;color:var(--text);background:var(--surface-1);border:1px solid var(--border);border-radius:7px"></label>
+              <label style="display:flex;flex-direction:column;gap:5px;font-size:11.5px;color:var(--text-2)">Đến ngày
+                <input type="date" value="{{ fTo }}" onChange="{{ onTo }}" style="padding:7px 10px;font-size:13px;color:var(--text);background:var(--surface-1);border:1px solid var(--border);border-radius:7px"></label>
+              <label style="display:flex;flex-direction:column;gap:5px;font-size:11.5px;color:var(--text-2)">Mã lô
+                <select value="{{ fLot }}" onChange="{{ onLot }}" style="appearance:none;padding:7px 28px 7px 10px;font-size:13px;color:var(--text);background:var(--surface-1);border:1px solid var(--border);border-radius:7px;min-width:180px;background-image:url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%238A8C84%22 stroke-width=%222%22><path d=%22M6 9l6 6 6-6%22/></svg>');background-repeat:no-repeat;background-position:right 9px center">
+                  <sc-for list="{{ lotOptions }}" as="o" hint-placeholder-count="3"><option value="{{ o.v }}">{{ o.t }}</option></sc-for>
+                </select></label>
+              <button onClick="{{ onClearFilters }}" style="padding:8px 13px;font-size:12.5px;color:var(--text-2);background:transparent;border:1px solid var(--border);border-radius:7px;cursor:pointer">Xoá lọc</button>
+              <div style="flex:1"></div>
+              <button onClick="{{ onExport }}" style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;font-size:13px;font-weight:500;color:var(--teal-text);background:var(--teal-bg);border:1px solid transparent;border-radius:8px;cursor:pointer">{{ icoDownload }}<span>Xuất CSV (theo bộ lọc)</span></button>
+            </div>
+
+            <div style="font-size:12.5px;color:var(--text-3)">{{ histSummary }}</div>
+
+            <div class="aq-scroll" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);overflow-x:auto;box-shadow:var(--shadow)">
+              <table style="width:100%;border-collapse:collapse;min-width:820px">
+                <thead>
+                  <tr style="background:var(--surface-1)">
+                    <th style="text-align:left;padding:11px 18px;font-size:11px;font-weight:500;letter-spacing:.03em;color:var(--text-2)">Mã mẫu</th>
+                    <th style="text-align:left;padding:11px 14px;font-size:11px;font-weight:500;color:var(--text-2)">Mã lô</th>
+                    <th style="text-align:left;padding:11px 14px;font-size:11px;font-weight:500;color:var(--text-2)">Thời gian chụp</th>
+                    <th style="text-align:right;padding:11px 14px;font-size:11px;font-weight:500;color:var(--text-2)">Số hạt</th>
+                    <th style="text-align:left;padding:11px 14px;font-size:11px;font-weight:500;color:var(--text-2)">Phân bố loại</th>
+                    <th style="text-align:left;padding:11px 14px;font-size:11px;font-weight:500;color:var(--text-2)">Trạng thái</th>
+                    <th style="padding:11px 18px"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <sc-for list="{{ pageRows }}" as="r" hint-placeholder-count="10">
+                    <tr style="border-top:1px solid var(--border)">
+                      <td style="padding:12px 18px;font-size:12.5px;font-family:ui-monospace,Menlo,monospace">{{ r.code }}</td>
+                      <td style="padding:12px 14px;font-size:12.5px;color:var(--text-2)">{{ r.lot }}</td>
+                      <td style="padding:12px 14px;font-size:12.5px;color:var(--text-2)">{{ r.time }}</td>
+                      <td style="padding:12px 14px;font-size:12.5px;text-align:right;font-weight:500">{{ r.count }}</td>
+                      <td style="padding:12px 14px">{{ r.dist }}</td>
+                      <td style="padding:12px 14px">{{ r.status }}</td>
+                      <td style="padding:12px 18px;text-align:right"><a onClick="{{ r.open }}" href="#" style="font-size:12.5px;font-weight:500;color:var(--blue-text);cursor:pointer;white-space:nowrap">Chi tiết →</a></td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:12px;justify-content:flex-end">
+              <span style="font-size:12px;color:var(--text-3)">{{ pageLabel }}</span>
+              <button onClick="{{ prevPage }}" style="{{ prevStyle }}">‹ Trước</button>
+              <button onClick="{{ nextPage }}" style="{{ nextStyle }}">Sau ›</button>
+            </div>
+
+            {{ histNote }}
+          </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <!-- ============ SAMPLE DETAIL ============ -->
+      <sc-if value="{{ isDetail }}" hint-placeholder-val="{{ false }}">
+        <div style="max-width:1180px">
+          <sc-if value="{{ detNotfound }}" hint-placeholder-val="{{ false }}">{{ notFoundBlock }}</sc-if>
+          <sc-if value="{{ detLoading }}" hint-placeholder-val="{{ false }}">{{ detailLoadingEl }}</sc-if>
+          <sc-if value="{{ detError }}" hint-placeholder-val="{{ false }}">{{ errorBlock }}</sc-if>
+          <sc-if value="{{ detNormal }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <button onClick="{{ navHistory }}" style="align-self:flex-start;display:inline-flex;align-items:center;gap:6px;padding:6px 4px;font-size:12.5px;color:var(--text-2);background:none;border:none;cursor:pointer">‹ Quay lại lịch sử</button>
+
+            <div data-fold="detail2" style="display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:20px;align-items:start">
+
+              <div data-fold="sticky" style="position:sticky;top:76px">
+                <section style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden">
+                  <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+                    <h2 style="margin:0;font-size:13.5px;font-weight:600">Ảnh backlit gốc</h2>
+                    <span style="font-size:11px;color:var(--text-3);font-family:ui-monospace,Menlo,monospace">{{ detImgDim }}</span>
+                  </div>
+                  <div style="padding:14px">{{ detImage }}</div>
+                  <div style="padding:0 14px 14px;display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center">
+                    <sc-for list="{{ detLegend }}" as="l" hint-placeholder-count="4">
+                      <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-2)"><span style="width:11px;height:11px;border-radius:3px;background:{{ l.color }}"></span>{{ l.vi }}</span>
+                    </sc-for>
+                    <span style="flex:1"></span>
+                    <span style="font-size:11px;color:var(--text-3)">Di chuột lên hạt để xem chi tiết</span>
+                  </div>
+                </section>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:16px">
+                <section style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);box-shadow:var(--shadow);padding:16px 18px">
+                  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                    <span style="font-family:ui-monospace,Menlo,monospace;font-size:13.5px;font-weight:500">{{ detSample.code }}</span>
+                    {{ detStatus }}
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;margin-top:12px">
+                    <sc-for list="{{ detMeta }}" as="row" hint-placeholder-count="6">
+                      <div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+                        <span style="font-size:12px;color:var(--text-2)">{{ row.k }}</span>
+                        <span style="font-size:12px;font-weight:500;text-align:right;font-family:{{ row.mono }}">{{ row.v }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </section>
+
+                <section style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden">
+                  <div style="padding:14px 16px;border-bottom:1px solid var(--border)"><h2 style="margin:0;font-size:13.5px;font-weight:600">Từng hạt ({{ detCount }})</h2></div>
+                  <div class="aq-scroll" style="overflow-x:auto">
+                    <table style="width:100%;border-collapse:collapse;min-width:440px">
+                      <thead><tr style="background:var(--surface-1)">
+                        <th style="text-align:left;padding:9px 16px;font-size:10.5px;font-weight:500;color:var(--text-2)">Nhãn</th>
+                        <th style="text-align:right;padding:9px 10px;font-size:10.5px;font-weight:500;color:var(--text-2)">Tin cậy</th>
+                        <th style="text-align:right;padding:9px 10px;font-size:10.5px;font-weight:500;color:var(--text-2)">Kích thước</th>
+                        <th style="text-align:right;padding:9px 10px;font-size:10.5px;font-weight:500;color:var(--text-2)">Diện tích</th>
+                        <th style="text-align:right;padding:9px 16px;font-size:10.5px;font-weight:500;color:var(--text-2)">Tâm (x, y)</th>
+                      </tr></thead>
+                      <tbody>
+                        <sc-for list="{{ detParticleRows }}" as="p" hint-placeholder-count="6">
+                          <tr onMouseEnter="{{ p.enter }}" onMouseLeave="{{ p.leave }}" style="{{ p.rowStyle }}">
+                            <td style="padding:9px 16px"><span style="display:inline-flex;align-items:center;gap:7px;font-size:12px"><span style="width:10px;height:10px;border-radius:2px;background:{{ p.color }}"></span>{{ p.vi }}</span></td>
+                            <td style="padding:9px 10px;font-size:12px;text-align:right;color:{{ p.confColor }}">{{ p.conf }}</td>
+                            <td style="padding:9px 10px;font-size:12px;text-align:right;font-weight:500">{{ p.size }}</td>
+                            <td style="padding:9px 10px;font-size:12px;text-align:right;color:var(--text-2)">{{ p.area }}</td>
+                            <td style="padding:9px 16px;font-size:11.5px;text-align:right;color:var(--text-2);font-family:ui-monospace,Menlo,monospace">{{ p.centroid }}</td>
+                          </tr>
+                        </sc-for>
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);box-shadow:var(--shadow);padding:16px 18px">
+                  <h2 style="margin:0 0 4px;font-size:13.5px;font-weight:600">Phân bố kích thước</h2>
+                  <p style="margin:0 0 10px;font-size:11.5px;color:var(--text-3)">Histogram, bin cố định 0,3 mm · dải 0–5 mm</p>
+                  {{ histEl }}
+                </section>
+
+                <section style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);box-shadow:var(--shadow);padding:16px 18px">
+                  <h2 style="margin:0 0 12px;font-size:13.5px;font-weight:600">Phân bố loại</h2>
+                  <div style="display:flex;flex-direction:column;gap:10px">
+                    <sc-for list="{{ detLabelRows }}" as="l" hint-placeholder-count="4">
+                      <div style="display:flex;align-items:center;gap:10px">
+                        <span style="width:64px;font-size:12px;color:var(--text-2);flex:none">{{ l.vi }}</span>
+                        <div style="flex:1;height:9px;background:var(--surface-1);border-radius:5px;overflow:hidden"><div style="height:100%;width:{{ l.pct }};background:{{ l.color }};border-radius:5px"></div></div>
+                        <span style="width:26px;text-align:right;font-size:12px;font-weight:500;flex:none">{{ l.count }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </section>
+
+                <section style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden">
+                  <button onClick="{{ toggleJson }}" style="width:100%;display:flex;align-items:center;gap:9px;padding:14px 16px;background:none;border:none;cursor:pointer;text-align:left">
+                    <span style="font-size:13.5px;font-weight:600;color:var(--text)">Raw metadata JSON</span>
+                    <span style="font-size:11px;color:var(--text-3)">bản ghi audit nguyên văn</span>
+                    <span style="flex:1"></span>
+                    <span style="font-size:12px;color:var(--text-2)">{{ jsonToggleLabel }}</span>
+                  </button>
+                  <sc-if value="{{ jsonOpen }}" hint-placeholder-val="{{ false }}">
+                    <pre class="aq-scroll" style="margin:0;padding:14px 16px;border-top:1px solid var(--border);background:var(--surface-1);font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.55;color:var(--text-2);overflow-x:auto;white-space:pre">{{ rawJson }}</pre>
+                  </sc-if>
+                </section>
+              </div>
+            </div>
+            {{ detailNote }}
+          </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <!-- ============ STREAM DEMO ============ -->
+      <sc-if value="{{ isStream }}" hint-placeholder-val="{{ false }}">
+        <div style="max-width:1180px;display:flex;flex-direction:column;gap:16px">
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:13px 16px;background:var(--amber-bg);border:1px solid transparent;border-radius:10px">
+            <span style="flex:none;color:var(--amber-text);margin-top:1px">{{ icoWarnTri }}</span>
+            <div>
+              <div style="font-size:13.5px;font-weight:500;color:var(--amber-text)">Chế độ demo — mô phỏng, không ghi vào lịch sử.</div>
+              <div style="font-size:12px;color:var(--amber-strong);margin-top:2px">Đây không phải detection thật và không phải bản ghi audit. Dùng để trình chiếu dòng chảy backlit.</div>
+            </div>
+          </div>
+
+          <section style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden">
+            <div style="position:relative">
+              <canvas ref="{{ streamRef }}" style="width:100%;height:452px;display:block;background:#C9CCC5"></canvas>
+              <div style="position:absolute;top:12px;left:12px;display:flex;flex-direction:column;gap:8px;pointer-events:none">
+                <div style="display:flex;align-items:center;gap:14px;padding:9px 13px;background:color-mix(in srgb,var(--surface) 80%,transparent);backdrop-filter:blur(6px);border:1px solid var(--border);border-radius:9px">
+                  <div style="display:flex;flex-direction:column"><span style="font-size:10px;color:var(--text-3)">Đang thấy</span><span style="font-size:19px;font-weight:600;line-height:1">{{ hudCount }}</span></div>
+                  <div style="width:1px;height:26px;background:var(--border)"></div>
+                  <div style="display:flex;flex-direction:column"><span style="font-size:10px;color:var(--text-3)">FPS</span><span style="font-size:19px;font-weight:600;line-height:1">{{ hudFps }}</span></div>
+                </div>
+                <div style="padding:7px 11px;background:color-mix(in srgb,var(--surface) 80%,transparent);backdrop-filter:blur(6px);border:1px solid var(--border);border-radius:9px">{{ hudDist }}</div>
+              </div>
+              <sc-if value="{{ streamPaused }}" hint-placeholder-val="{{ false }}">
+                <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.06)"><span style="padding:9px 16px;background:var(--surface);border:1px solid var(--border);border-radius:9px;font-size:13px;color:var(--text-2)">Đã tạm dừng · nhấn Bật stream</span></div>
+              </sc-if>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 16px;border-top:1px solid var(--border)">
+              <button onClick="{{ toggleStream }}" style="{{ streamBtnStyle }}">{{ streamBtnIcon }}<span>{{ streamBtnLabel }}</span></button>
+              <button onClick="{{ toggleDet }}" style="display:inline-flex;align-items:center;gap:9px;padding:8px 8px 8px 4px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text)">
+                <span style="{{ switchTrack }}"><span style="{{ switchKnob }}"></span></span>Hiện detection
+              </button>
+              <div style="flex:1"></div>
+              <label style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--text-2)">Tốc độ
+                <input type="range" min="0.4" max="3" step="0.1" value="{{ speed }}" onInput="{{ onSpeed }}" style="width:150px;accent-color:var(--teal)">
+                <span style="width:34px;font-weight:500;color:var(--text)">{{ speedLabel }}</span>
+              </label>
+            </div>
+          </section>
+          {{ streamNote }}
+        </div>
+      </sc-if>
+
+      <!-- ============ STATES GALLERY ============ -->
+      <sc-if value="{{ isStates }}" hint-placeholder-val="{{ false }}">
+        <div style="max-width:1180px;display:flex;flex-direction:column;gap:16px">
+          <p style="margin:0;font-size:13px;color:var(--text-2);max-width:720px;line-height:1.6">Mỗi màn hình đều thiết kế kèm trạng thái, không chỉ trạng thái "đẹp". Xem trực tiếp trên từng trang qua ô <span style="font-weight:500;color:var(--text)">Xem trạng thái</span> ở thanh trên cùng; dưới đây là bộ sưu tập đầy đủ.</p>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
+            <sc-for list="{{ galleryCards }}" as="g" hint-placeholder-count="5">
+              <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-card);box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column">
+                <div style="padding:13px 16px;border-bottom:1px solid var(--border)">
+                  <div style="font-size:13.5px;font-weight:600">{{ g.title }}</div>
+                  <div style="font-size:11.5px;color:var(--text-3);margin-top:2px">{{ g.sub }}</div>
+                </div>
+                <div style="padding:16px;background:var(--bg);flex:1;display:flex;align-items:center;justify-content:center;min-height:200px">{{ g.preview }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+    </main>
+  </div>
+
+  <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:9px;padding:11px 16px;font-size:13px;color:var(--text);background:var(--surface);border:1px solid var(--border-strong);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.18);animation:fadein .2s ease">{{ icoCheck }}<span>{{ toast }}</span></div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;760px&quot;}}">
+const h = React.createElement;
+const LABELS = ['plastic','bubble','organic','fiber','unknown'];
+const VI = {plastic:'Nhựa', bubble:'Bọt khí', organic:'Hữu cơ', fiber:'Sợi', unknown:'Không xác định'};
+const CVAR = {plastic:'var(--p-plastic)', bubble:'var(--p-bubble)', organic:'var(--p-organic)', fiber:'var(--p-fiber)', unknown:'var(--p-unknown)'};
+
+const SAMPLES = [
+  {id:14, code:'S20260715-152210-9c1a', lot:'LOT-2026-07-15-A', at:'2026-07-15T15:22:10+07:00', dist:{plastic:3,bubble:2,organic:1}},
+  {id:13, code:'S20260715-145533-1a2e', lot:'LOT-2026-07-15-A', at:'2026-07-15T14:55:33+07:00', dist:{}},
+  {id:12, code:'S20260715-142008-7f3a', lot:'LOT-2026-07-15-A', at:'2026-07-15T14:20:08+07:00', dist:{plastic:2,fiber:1}},
+  {id:11, code:'S20260715-133041-b8d2', lot:'LOT-2026-07-15-B', at:'2026-07-15T13:30:41+07:00', dist:{bubble:4,plastic:1,organic:2,unknown:1}},
+  {id:10, code:'S20260715-121815-4e90', lot:'LOT-2026-07-15-B', at:'2026-07-15T12:18:15+07:00', dist:{}},
+  {id:9,  code:'S20260715-110502-c3f1', lot:null,               at:'2026-07-15T11:05:02+07:00', dist:{plastic:1}},
+  {id:8,  code:'S20260715-095529-2d6a', lot:'LOT-2026-07-15-B', at:'2026-07-15T09:55:29+07:00', dist:{plastic:4,bubble:1,organic:2,fiber:1}},
+  {id:7,  code:'S20260714-171233-aa01', lot:'LOT-2026-07-14-C', at:'2026-07-14T17:12:33+07:00', dist:{plastic:2,bubble:1}},
+  {id:6,  code:'S20260714-160044-9b7c', lot:'LOT-2026-07-14-C', at:'2026-07-14T16:00:44+07:00', dist:{}},
+  {id:5,  code:'S20260714-142918-5e3d', lot:'LOT-2026-07-14-C', at:'2026-07-14T14:29:18+07:00', dist:{organic:3,fiber:2}},
+  {id:4,  code:'S20260714-131502-77af', lot:null,               at:'2026-07-14T13:15:02+07:00', dist:{plastic:1,bubble:1}},
+  {id:3,  code:'S20260713-163310-1c2b', lot:'LOT-2026-07-13-A', at:'2026-07-13T16:33:10+07:00', dist:{plastic:3,organic:1}},
+  {id:2,  code:'S20260713-150705-8dfa', lot:'LOT-2026-07-13-A', at:'2026-07-13T15:07:05+07:00', dist:{}},
+  {id:1,  code:'S20260713-143205-7f3a', lot:'LOT-2026-07-13-A', at:'2026-07-13T14:32:05+07:00', dist:{plastic:2,bubble:1,organic:1,fiber:1}},
+];
+const cnt = s => Object.values(s.dist).reduce((a,b)=>a+b,0);
+const isWarn = s => cnt(s) > 0;
+const PXMM = 14.0, IMGW = 640, IMGH = 480;
+
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+
+class Component extends DCLogic {
+  streamRef = React.createRef();
+  state = {
+    screen:'dashboard', theme:'light', stateView:'normal',
+    sampleId:14, page:1, fFrom:'', fTo:'', fLot:'', jsonOpen:false, hover:null,
+    streamOn:true, showDet:false, speed:1.4, hud:{count:0,dist:{},fps:0}, toast:null,
+  };
+
+  componentDidMount(){
+    try{ const t=localStorage.getItem('aquascope-theme'); if(t) this.setState({theme:t}); }catch(e){}
+    document.documentElement.setAttribute('data-theme', this.state.theme);
+    if(this.state.screen==='stream') this.startStream();
+  }
+  componentDidUpdate(pp,ps){
+    if(ps.theme!==this.state.theme){
+      document.documentElement.setAttribute('data-theme', this.state.theme);
+      try{ localStorage.setItem('aquascope-theme', this.state.theme); }catch(e){}
+    }
+    if(ps.screen!==this.state.screen || ps.streamOn!==this.state.streamOn){
+      if(this.state.screen==='stream' && this.state.streamOn) this.startStream(); else this.stopStream();
+    }
+  }
+  componentWillUnmount(){ this.stopStream(); }
+
+  go(screen){ this.setState({screen, stateView:'normal'}); }
+  openSample(id){ this.setState({screen:'detail', sampleId:id, stateView:'normal', jsonOpen:false, hover:null}); }
+  toast(msg){ this.setState({toast:msg}); clearTimeout(this._t); this._t=setTimeout(()=>this.setState({toast:null}),2600); }
+
+  // ---- particle synthesis (deterministic per sample) ----
+  particlesFor(s){
+    const labels=[]; LABELS.forEach(k=>{ for(let i=0;i<(s.dist[k]||0);i++) labels.push(k); });
+    const rng=mulberry32(s.id*7919+13);
+    return labels.map((label,idx)=>{
+      let size=+(0.4+rng()*3.8).toFixed(1);
+      let wmm=size, hmm=size;
+      if(label==='fiber'){ wmm=size*0.42; hmm=size*2.3; }
+      let w=Math.max(7,Math.round(wmm*PXMM)), hh=Math.max(7,Math.round(hmm*PXMM));
+      let x=Math.round(24+rng()*(IMGW-48-w)), y=Math.round(24+rng()*(IMGH-48-hh));
+      let cx=+(x+w/2).toFixed(1), cy=+(y+hh/2).toFixed(1);
+      let area=Math.round(Math.PI*(w/2)*(hh/2)*0.82);
+      let conf=+(0.72+rng()*0.26).toFixed(2);
+      if(label==='unknown') conf=+(0.41+rng()*0.11).toFixed(2);
+      return {blob_index:idx,label,size_mm:size,bbox_x:x,bbox_y:y,bbox_w:w,bbox_h:hh,centroid_x:cx,centroid_y:cy,area_px:area,confidence:conf};
+    });
+  }
+
+  // ---- backlit image + bbox overlay (SVG) ----
+  backlit(s, particles, opts){
+    const o=opts||{}; const boxes=o.boxes!==false; const big=!!o.big; const hover=this.state.hover;
+    const defs=h('defs',{key:'d'},
+      h('radialGradient',{id:'blob',cx:'0.5',cy:'0.42',r:'0.6'},
+        h('stop',{offset:'0%',stopColor:'#1a1c19',stopOpacity:'0.92'}),
+        h('stop',{offset:'62%',stopColor:'#26282300',stopOpacity:'0.78'}),
+        h('stop',{offset:'100%',stopColor:'#3a3c36',stopOpacity:'0'})),
+      h('radialGradient',{id:'field',cx:'0.5',cy:'0.4',r:'0.75'},
+        h('stop',{offset:'0%',stopColor:'#E4E6E1'}),
+        h('stop',{offset:'100%',stopColor:'#C9CCC5'})));
+    const bg=h('rect',{key:'bg',x:0,y:0,width:IMGW,height:IMGH,fill:'url(#field)'});
+    const blobs=particles.map((p,i)=>{
+      const cx=p.bbox_x+p.bbox_w/2, cy=p.bbox_y+p.bbox_h/2, rx=p.bbox_w/2, ry=p.bbox_h/2;
+      if(p.label==='bubble'){
+        return h('g',{key:'b'+i},
+          h('ellipse',{cx,cy,rx,ry,fill:'#D2D4CE',stroke:'#3d3f39',strokeWidth:Math.max(2,rx*0.22),opacity:0.85}),
+          h('ellipse',{cx:cx-rx*0.28,cy:cy-ry*0.28,rx:rx*0.32,ry:ry*0.32,fill:'#EFF0EC',opacity:0.7}));
+      }
+      return h('ellipse',{key:'b'+i,cx,cy,rx,ry,fill:'url(#blob)',
+        transform:p.label==='fiber'?`rotate(${(i*37)%50-25} ${cx} ${cy})`:null});
+    });
+    let overlay=[];
+    if(boxes){
+      overlay=particles.map((p,i)=>{
+        const on=hover===i; const col=CVAR[p.label]||CVAR.unknown;
+        const parts=[h('rect',{key:'r',x:p.bbox_x,y:p.bbox_y,width:p.bbox_w,height:p.bbox_h,fill:on?col:'none',fillOpacity:on?0.14:0,
+          style:{stroke:col},strokeWidth:on?3.4:2.2,strokeDasharray:p.label==='unknown'?'6 4':null,rx:2})];
+        if(big){
+          const tw=(VI[p.label].length*6.4)+10;
+          parts.push(h('g',{key:'t'},
+            h('rect',{x:p.bbox_x,y:Math.max(0,p.bbox_y-17),width:tw,height:15,style:{fill:col},rx:2}),
+            h('text',{x:p.bbox_x+5,y:Math.max(11,p.bbox_y-6),fontSize:11,fill:'#fff',fontFamily:'Archivo,sans-serif',fontWeight:500},VI[p.label])));
+        }
+        return h('g',{key:'o'+i,style:{cursor:'pointer'},
+          onMouseEnter:()=>this.setState({hover:i}), onMouseLeave:()=>this.setState({hover:null})}, parts);
+      });
+    }
+    const svg=h('svg',{key:'svg',viewBox:`0 0 ${IMGW} ${IMGH}`,width:'100%',
+      style:{display:'block',borderRadius:8,background:'#C9CCC5'},role:'img',
+      'aria-label':`Ảnh backlit mẫu, ${particles.length} hạt`},
+      defs,bg,...blobs,...overlay);
+    let tip=null;
+    if(big && hover!=null && particles[hover]){
+      const p=particles[hover];
+      tip=h('div',{key:'tip',style:{position:'absolute',left:(p.centroid_x/IMGW*100)+'%',top:(p.bbox_y/IMGH*100)+'%',
+        transform:'translate(-50%,calc(-100% - 8px))',pointerEvents:'none',zIndex:5,whiteSpace:'nowrap',
+        background:'var(--surface)',border:'1px solid var(--border-strong)',borderRadius:8,padding:'7px 10px',
+        boxShadow:'0 6px 22px rgba(0,0,0,.22)',fontSize:12}},
+        h('div',{style:{display:'flex',alignItems:'center',gap:6,fontWeight:600,marginBottom:2}},
+          h('span',{style:{width:9,height:9,borderRadius:2,background:CVAR[p.label]}}), VI[p.label]),
+        h('div',{style:{color:'var(--text-2)',fontSize:11.5}}, `${p.size_mm} mm · độ tin cậy ${(p.confidence*100).toFixed(0)}%`));
+    }
+    return h('div',{style:{position:'relative',width:'100%'}}, svg, tip);
+  }
+
+  // ---- donut ----
+  donut(entries,total,size){
+    const r=(size||132)/2, sw=size?size*0.14:18, rr=r-sw/2, C=2*Math.PI*rr, c=r;
+    let off=0;
+    const segs=entries.filter(e=>e.count>0).map((e,i)=>{
+      const len=e.count/total*C; const el=h('circle',{key:i,cx:c,cy:c,r:rr,fill:'none',style:{stroke:e.color},strokeWidth:sw,
+        strokeDasharray:`${len} ${C-len}`,strokeDashoffset:-off,transform:`rotate(-90 ${c} ${c})`,strokeLinecap:'butt'}); off+=len; return el;
+    });
+    return h('svg',{viewBox:`0 0 ${r*2} ${r*2}`,width:'100%',height:'100%'},
+      h('circle',{cx:c,cy:c,r:rr,fill:'none',style:{stroke:'var(--surface-1)'},strokeWidth:sw}), ...segs);
+  }
+
+  // ---- histogram ----
+  histogram(particles){
+    const BIN=0.3, N=17, W=360, H=150, padL=6, padR=6, padB=26, padT=8;
+    const counts=new Array(N).fill(0);
+    particles.forEach(p=>{ let idx=Math.floor(p.size_mm/BIN); idx=Math.max(0,Math.min(idx,N-1)); counts[idx]++; });
+    const max=Math.max(1,...counts); const plotW=W-padL-padR, plotH=H-padT-padB, bw=plotW/N;
+    const bars=counts.map((v,i)=>{ const bh=v/max*plotH; const x=padL+i*bw; const y=padT+plotH-bh;
+      return h('g',{key:i},
+        h('rect',{x:x+1.5,y,width:bw-3,height:bh,style:{fill:'var(--blue)'},rx:2,opacity:v?0.9:0}),
+        v?h('text',{x:x+bw/2,y:y-3,fontSize:9,textAnchor:'middle',style:{fill:'var(--text-3)'}},v):null); });
+    const ticks=[0,1,2,3,4,5].map(mm=>{ const x=padL+(mm/(N*BIN))*plotW;
+      return h('g',{key:'t'+mm},
+        h('line',{x1:x,y1:padT+plotH,x2:x,y2:padT+plotH+4,style:{stroke:'var(--border-strong)'},strokeWidth:1}),
+        h('text',{x,y:H-8,fontSize:10,textAnchor:'middle',style:{fill:'var(--text-3)'}},mm)); });
+    return h('svg',{viewBox:`0 0 ${W} ${H}`,width:'100%',style:{display:'block'}},
+      h('line',{x1:padL,y1:padT+plotH,x2:W-padR,y2:padT+plotH,style:{stroke:'var(--border)'},strokeWidth:1}),
+      ...bars, ...ticks,
+      h('text',{x:W-padR,y:12,fontSize:9.5,textAnchor:'end',style:{fill:'var(--text-3)'}},'mm'));
+  }
+
+  // ---- stream sim ----
+  startStream(){
+    if(this._raf) return;
+    if(!this._sim) this._sim={parts:[],acc:0,last:0,frames:0,fpsT:0,fps:0,hudT:0};
+    this._sim.last=performance.now();
+    const loop=(t)=>{
+      const cv=this.streamRef && this.streamRef.current;
+      if(!cv){ this._raf=requestAnimationFrame(loop); return; }
+      const dpr=Math.min(2,window.devicePixelRatio||1);
+      const cw=cv.clientWidth||800, ch=cv.clientHeight||440;
+      if(cv.width!==Math.round(cw*dpr)){ cv.width=Math.round(cw*dpr); cv.height=Math.round(ch*dpr); }
+      const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+      const sim=this._sim; const dt=Math.min(50,t-sim.last); sim.last=t;
+      // field
+      const g=ctx.createRadialGradient(cw/2,ch*0.4,10,cw/2,ch*0.4,Math.max(cw,ch)*0.7);
+      g.addColorStop(0,'#E4E6E1'); g.addColorStop(1,'#C7CAC3');
+      ctx.fillStyle=g; ctx.fillRect(0,0,cw,ch);
+      // spawn
+      const spd=this.state.speed;
+      sim.acc+=dt*spd;
+      const gap=520;
+      while(sim.acc>gap){ sim.acc-=gap; this._spawn(cw); }
+      const det=this.state.showDet;
+      const css=getComputedStyle(document.documentElement);
+      const colOf=l=>css.getPropertyValue('--p-'+l).trim()||'#888';
+      const seen={};
+      sim.parts.forEach(p=>{
+        p.y+=p.vy*spd*dt*0.06;
+        // blob
+        ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot);
+        const rg=ctx.createRadialGradient(0,0,1,0,0,p.rx*1.1);
+        if(p.label==='bubble'){ ctx.fillStyle='#D2D4CE'; ctx.strokeStyle='#3d3f39'; ctx.lineWidth=Math.max(2,p.rx*0.22);
+          ctx.beginPath(); ctx.ellipse(0,0,p.rx,p.ry,0,0,7); ctx.fill(); ctx.stroke(); }
+        else { rg.addColorStop(0,'rgba(26,28,25,0.9)'); rg.addColorStop(0.65,'rgba(40,42,37,0.55)'); rg.addColorStop(1,'rgba(58,60,54,0)');
+          ctx.fillStyle=rg; ctx.beginPath(); ctx.ellipse(0,0,p.rx,p.ry,0,0,7); ctx.fill(); }
+        ctx.restore();
+        if(p.y>-40 && p.y<ch+40){ seen[p.label]=(seen[p.label]||0)+1; }
+        if(det){
+          const col=colOf(p.label);
+          ctx.strokeStyle=col; ctx.lineWidth=2; ctx.setLineDash(p.label==='unknown'?[6,4]:[]);
+          const bx=p.x-p.rx-3, by=p.y-p.ry-3, bw=p.rx*2+6, bh=p.ry*2+6;
+          ctx.strokeRect(bx,by,bw,bh); ctx.setLineDash([]);
+          ctx.fillStyle=col; const lbl=VI[p.label]; ctx.font='500 11px Archivo,sans-serif';
+          const tw=ctx.measureText(lbl).width+8; ctx.fillRect(bx,by-15,tw,15);
+          ctx.fillStyle='#fff'; ctx.fillText(lbl,bx+4,by-4);
+        }
+      });
+      sim.parts=sim.parts.filter(p=>p.y<ch+60);
+      // fps + hud throttle
+      sim.frames++; if(t-sim.fpsT>500){ sim.fps=Math.round(sim.frames/((t-sim.fpsT)/1000)); sim.frames=0; sim.fpsT=t; }
+      if(t-sim.hudT>250){ sim.hudT=t; const total=Object.values(seen).reduce((a,b)=>a+b,0);
+        this.setState({hud:{count:total,dist:seen,fps:sim.fps}}); }
+      this._raf=requestAnimationFrame(loop);
+    };
+    this._raf=requestAnimationFrame(loop);
+  }
+  _spawn(cw){
+    const r=mulberry32((this._seed=(this._seed||1)+1)*2654435761);
+    const roll=r(); let label='plastic';
+    if(roll<0.40)label='plastic'; else if(roll<0.65)label='bubble'; else if(roll<0.85)label='organic'; else label='fiber';
+    const size=0.5+r()*3.6; let rx=size*PXMM/2, ry=rx;
+    if(label==='fiber'){ rx=size*PXMM*0.22; ry=size*PXMM*1.1; }
+    this._sim.parts.push({x:30+r()*(cw-60),y:-30,vy:0.7+r()*0.8,rx,ry,rot:label==='fiber'?(r()-0.5):0,label});
+  }
+  stopStream(){ if(this._raf){ cancelAnimationFrame(this._raf); this._raf=null; } }
+
+  // ---- formatting ----
+  fdt(iso){ return iso.slice(8,10)+'/'+iso.slice(5,7)+' · '+iso.slice(11,16); }
+  ftime(iso){ return iso.slice(11,19); }
+  fdate(iso){ return iso.slice(8,10)+'/'+iso.slice(5,7)+'/'+iso.slice(0,4); }
+
+  statusChip(s){
+    const warn=isWarn(s);
+    const style={display:'inline-flex',alignItems:'center',gap:6,padding:'3px 9px',fontSize:12,fontWeight:500,borderRadius:'var(--r-chip)',
+      background:warn?'var(--amber-bg)':'var(--teal-bg)',color:warn?'var(--amber-text)':'var(--teal-text)'};
+    return h('span',{style},h('span',{style:{width:6,height:6,borderRadius:'50%',background:warn?'var(--amber)':'var(--teal)'}}), warn?'Cảnh báo':'Đạt');
+  }
+  distChips(s){
+    const present=LABELS.filter(l=>s.dist[l]);
+    if(!present.length) return h('span',{style:{fontSize:12,color:'var(--text-3)'}},'—');
+    return h('div',{style:{display:'inline-flex',gap:6,flexWrap:'wrap'}}, present.map(l=>
+      h('span',{key:l,title:VI[l],style:{display:'inline-flex',alignItems:'center',gap:4,fontSize:11.5,color:'var(--text-2)'}},
+        h('span',{style:{width:9,height:9,borderRadius:2,background:CVAR[l]}}), s.dist[l])));
+  }
+
+  // ---- icons ----
+  ic(path,fill){ return h('svg',{width:16,height:16,viewBox:'0 0 24 24',fill:'none',stroke:'currentColor',strokeWidth:1.8,strokeLinecap:'round',strokeLinejoin:'round'}, path); }
+  navBtnStyle(active){ return `display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 12px;font-size:13px;font-weight:${active?500:400};border:none;border-radius:8px;cursor:pointer;background:${active?'var(--teal-bg)':'transparent'};color:${active?'var(--teal-text)':'var(--text-2)'}`; }
+
+  emptyBlock(title,msg){
+    return h('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',textAlign:'center',
+      padding:'64px 24px',background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--r-card)',gap:14}},
+      h('div',{style:{width:60,height:60,borderRadius:14,background:'var(--surface-1)',display:'flex',alignItems:'center',justifyContent:'center'}},
+        h('svg',{width:30,height:30,viewBox:'0 0 24 24',fill:'none',stroke:'var(--text-3)',strokeWidth:1.5,strokeLinecap:'round',strokeLinejoin:'round'},
+          h('path',{d:'M3 7l9-4 9 4-9 4-9-4z'}),h('path',{d:'M3 12l9 4 9-4'}),h('path',{d:'M3 17l9 4 9-4'}))),
+      h('div',{style:{fontSize:15,fontWeight:600}},title),
+      h('p',{style:{margin:0,fontSize:13,color:'var(--text-2)',maxWidth:380,lineHeight:1.55}},msg));
+  }
+
+  note(items){
+    return h('details',{style:{marginTop:6,background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--r-card)',padding:'2px 18px'}},
+      h('summary',{style:{cursor:'pointer',padding:'13px 0',fontSize:12.5,fontWeight:500,color:'var(--text-2)',listStyle:'none',display:'flex',alignItems:'center',gap:8}},
+        this.ic(h('circle',{cx:12,cy:12,r:9},null),null), 'Ghi chú thiết kế · bố cục & mobile'),
+      h('div',{style:{paddingBottom:16,display:'flex',flexDirection:'column',gap:8}}, items.map((it,i)=>
+        h('div',{key:i,style:{display:'flex',gap:8,fontSize:12.5,color:'var(--text-2)',lineHeight:1.55}},
+          h('span',{style:{color:'var(--teal-text)',flex:'none'}},'—'), it))));
+  }
+
+  renderVals(){
+    const s=this.state; const scr=s.screen;
+    const today = SAMPLES.filter(x=>x.at.slice(0,10)==='2026-07-15');
+    const todayDist={}; today.forEach(x=>LABELS.forEach(l=>{ if(x.dist[l]) todayDist[l]=(todayDist[l]||0)+x.dist[l]; }));
+    const todayTotal=Object.values(todayDist).reduce((a,b)=>a+b,0);
+    const plasticPct = todayTotal? Math.round((todayDist.plastic||0)/todayTotal*100):0;
+    const warnCount = today.filter(isWarn).length;
+    const latest = SAMPLES[0];
+    const latestParts=this.particlesFor(latest);
+
+    const metricTiles=[
+      {label:'Mẫu hôm nay', value:today.length, hint:'trong ca 07:00–17:00', valColor:'var(--text)',
+        icon:this.ic(h('rect',{x:3,y:3,width:18,height:18,rx:2},null),null), style:this.tileStyle(false)},
+      {label:'Tổng hạt hôm nay', value:todayTotal, hint:'trên tất cả mẫu', valColor:'var(--text)',
+        icon:this.ic([h('circle',{key:1,cx:8,cy:8,r:2.5}),h('circle',{key:2,cx:16,cy:15,r:3.2}),h('circle',{key:3,cx:15,cy:6,r:1.6})],null), style:this.tileStyle(false)},
+      {label:'Tỉ lệ nhựa', value:plasticPct+'%', hint:(todayDist.plastic||0)+' / '+todayTotal+' hạt', valColor:'var(--teal-text)',
+        icon:this.ic(h('path',{d:'M12 2v20M2 12h20'},null),null), style:this.tileStyle(false)},
+      {label:'Cảnh báo', value:warnCount, hint:warnCount?'mẫu có ≥1 hạt':'không có', valColor:warnCount?'var(--amber-text)':'var(--text)',
+        icon:this.ic([h('path',{key:1,d:'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z'}),h('path',{key:2,d:'M12 9v4M12 17h.01'})],null), style:this.tileStyle(!!warnCount)},
+    ];
+
+    const donutLegend=LABELS.filter(l=>todayDist[l]).map(l=>({vi:VI[l],color:CVAR[l],pct:Math.round(todayDist[l]/todayTotal*100)+'%'}));
+    const donutEntries=LABELS.filter(l=>todayDist[l]).map(l=>({color:CVAR[l],count:todayDist[l]}));
+
+    const miniHead=h(React.Fragment,null,
+      ['Mã mẫu','Mã lô','Giờ chụp'].map(t=>h('th',{key:t,style:{textAlign:'left',padding:'10px 14px',fontSize:11,fontWeight:500,color:'var(--text-2)'}},t)),
+      h('th',{key:'c',style:{textAlign:'right',padding:'10px 14px',fontSize:11,fontWeight:500,color:'var(--text-2)'}},'Số hạt'),
+      h('th',{key:'s',style:{textAlign:'left',padding:'10px 14px',fontSize:11,fontWeight:500,color:'var(--text-2)'}},'Trạng thái'));
+
+    const recent5=today.slice(0,5).map(x=>({code:x.code,lot:x.lot||'—',time:this.fdt(x.at),count:cnt(x),status:this.statusChip(x),open:()=>this.openSample(x.id)}));
+
+    // history
+    let rows=SAMPLES.slice();
+    if(s.fLot) rows=rows.filter(x=>x.lot===s.fLot);
+    if(s.fFrom) rows=rows.filter(x=>x.at.slice(0,10)>=s.fFrom);
+    if(s.fTo) rows=rows.filter(x=>x.at.slice(0,10)<=s.fTo);
+    const PAGE=10, totalPages=Math.max(1,Math.ceil(rows.length/PAGE));
+    const page=Math.min(s.page,totalPages);
+    const pageRows=rows.slice((page-1)*PAGE,page*PAGE).map(x=>({code:x.code,lot:x.lot||'—',time:this.fdt(x.at),count:cnt(x),
+      dist:this.distChips(x),status:this.statusChip(x),open:(e)=>{e&&e.preventDefault();this.openSample(x.id);}}));
+    const lots=[...new Set(SAMPLES.map(x=>x.lot).filter(Boolean))];
+    const lotOptions=[{v:'',t:'Tất cả lô'},...lots.map(l=>({v:l,t:l}))];
+
+    const btn=(on)=>`padding:7px 13px;font-size:12.5px;border-radius:7px;cursor:${on?'pointer':'default'};background:var(--surface);border:1px solid var(--border);color:${on?'var(--text)':'var(--text-3)'};opacity:${on?1:.5}`;
+
+    const themeDark=s.theme==='dark';
+    const supportsStates = scr==='dashboard'||scr==='history'||scr==='detail';
+    const stateOptsBy={
+      dashboard:[{v:'normal',t:'Bình thường'},{v:'empty',t:'Trống (chưa có mẫu)'}],
+      history:[{v:'normal',t:'Bình thường'},{v:'empty',t:'Trống'},{v:'loading',t:'Đang tải'},{v:'error',t:'Lỗi tải'}],
+      detail:[{v:'normal',t:'Bình thường'},{v:'notfound',t:'Không tìm thấy (404)'},{v:'loading',t:'Đang tải'},{v:'error',t:'Lỗi tải'}],
+    };
+
+    return {
+      brandMark:this.brandMark(),
+      themeIcon: themeDark ? this.ic([h('circle',{key:1,cx:12,cy:12,r:5}),h('path',{key:2,d:'M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4'})],null) : this.ic(h('path',{d:'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z'},null),null),
+      toggleTheme:()=>this.setState({theme:themeDark?'light':'dark'}),
+      screenTitle:{dashboard:'Bảng điều khiển QC',history:'Lịch sử · audit',detail:'Chi tiết mẫu',stream:'Stream demo',states:'Trạng thái giao diện'}[scr],
+
+      icoGrid:this.ic([h('rect',{key:1,x:3,y:3,width:7,height:7,rx:1}),h('rect',{key:2,x:14,y:3,width:7,height:7,rx:1}),h('rect',{key:3,x:14,y:14,width:7,height:7,rx:1}),h('rect',{key:4,x:3,y:14,width:7,height:7,rx:1})],null),
+      icoList:this.ic([h('line',{key:1,x1:8,y1:6,x2:21,y2:6}),h('line',{key:2,x1:8,y1:12,x2:21,y2:12}),h('line',{key:3,x1:8,y1:18,x2:21,y2:18}),h('line',{key:4,x1:3,y1:6,x2:3.01,y2:6}),h('line',{key:5,x1:3,y1:12,x2:3.01,y2:12}),h('line',{key:6,x1:3,y1:18,x2:3.01,y2:18})],null),
+      icoWave:this.ic(h('path',{d:'M2 12s2-4 5-4 3 4 5 4 3-4 5-4 5 4 5 4'},null),null),
+      icoLayers:this.ic([h('path',{key:1,d:'M12 2l10 5-10 5L2 7l10-5z'}),h('path',{key:2,d:'M2 17l10 5 10-5M2 12l10 5 10-5'})],null),
+      icoSwatch:this.ic([h('circle',{key:1,cx:13.5,cy:6.5,r:2.5}),h('circle',{key:2,cx:17.5,cy:10.5,r:2.5}),h('circle',{key:3,cx:8.5,cy:7.5,r:2.5}),h('circle',{key:4,cx:6.5,cy:12.5,r:2.5}),h('path',{key:5,d:'M12 22a10 10 0 0 1 0-20c5 0 8 3 8 7 0 3-3 5-6 5h-2a2 2 0 0 0 0 4c1 0 2 1 2 2a2 2 0 0 1-2 2z'})],null),
+      icoDownload:this.ic([h('path',{key:1,d:'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'}),h('polyline',{key:2,points:'7 10 12 15 17 10'}),h('line',{key:3,x1:12,y1:15,x2:12,y2:3})],null),
+      icoCheck:this.ic(h('path',{d:'M20 6L9 17l-5-5'},null),null),
+
+      navDashboard:()=>this.go('dashboard'), navHistory:(e)=>{e&&e.preventDefault&&e.preventDefault();this.go('history');},
+      navStreamBtn:()=>this.go('stream'), navStates:()=>this.go('states'),
+      navDetailLatest:(e)=>{e&&e.preventDefault();this.openSample(latest.id);},
+      navStyleDashboard:this.navBtnStyle(scr==='dashboard'), navStyleHistory:this.navBtnStyle(scr==='history'),
+      navStyleStream:this.navBtnStyle(scr==='stream'), navStyleStates:this.navBtnStyle(scr==='states'),
+
+      supportsStates, stateView:s.stateView, stateOptions: stateOptsBy[scr]||[],
+      onStateChange:(e)=>this.setState({stateView:e.target.value}),
+      onExport:()=>this.toast('Đã tạo aqua_scope_export_20260715.csv (bản demo)'),
+      toast:s.toast,
+
+      isDashboard:scr==='dashboard', isHistory:scr==='history', isDetail:scr==='detail', isStream:scr==='stream', isStates:scr==='states',
+
+      dashNormal: scr==='dashboard'&&s.stateView!=='empty',
+      dashEmpty: scr==='dashboard'&&s.stateView==='empty',
+      metricTiles, latest:{
+        chipStyle:'display:inline-flex;align-items:center;gap:6px;padding:3px 9px;font-size:12px;font-weight:500;border-radius:var(--r-chip);background:'+(isWarn(latest)?'var(--amber-bg)':'var(--teal-bg)')+';color:'+(isWarn(latest)?'var(--amber-text)':'var(--teal-text)'),
+        chipDot:isWarn(latest)?'var(--amber)':'var(--teal)', chipText:isWarn(latest)?'Cảnh báo':'Đạt',
+        meta:[{k:'Mã mẫu',v:latest.code,mono:'ui-monospace,Menlo,monospace'},{k:'Mã lô',v:latest.lot||'—',mono:'ui-monospace,Menlo,monospace'},{k:'Giờ chụp',v:this.fdt(latest.at),mono:'inherit'},{k:'Số hạt',v:cnt(latest),mono:'inherit'}],
+      },
+      latestImage:this.backlit(latest,latestParts,{boxes:true,big:false}),
+      donutEl:this.donut(donutEntries,todayTotal,132), donutTotal:todayTotal, donutLegend,
+      miniHead, recent5,
+      dashNote:this.note([
+        'Bố cục lưới module cân bằng: 4 metric tile ở trên cho tổng quan ca, hàng 2 cột (1.5fr / 1fr) đặt "mẫu mới nhất" cạnh "phân bố loại" để mắt đọc từ tổng quan → gần nhất → chi tiết.',
+        'Thẻ Cảnh báo đổi nền amber khi >0 để nổi bật lúc trình chiếu từ xa; các tile khác giữ nền xám trung tính.',
+        'Mobile (≤900px): lưới 2 cột gập thành 1 cột xếp dọc; bảng "5 mẫu gần nhất" cuộn ngang trong khung riêng, thân trang không cuộn ngang.',
+      ]),
+
+      histNormal: scr==='history'&&(s.stateView==='normal'), histEmpty: scr==='history'&&s.stateView==='empty',
+      histLoading: scr==='history'&&s.stateView==='loading', histError: scr==='history'&&s.stateView==='error',
+      emptyBlock:this.emptyBlock('Chưa có mẫu nào','Chạy mock_sender.py để nạp dữ liệu demo, hoặc bật trạm aquascope-01 để bắt đầu ghi mẫu.'),
+      loadingTable:this.loadingTable(), errorBlock:this.errorBlock(),
+      fFrom:s.fFrom, fTo:s.fTo, fLot:s.fLot, lotOptions,
+      onFrom:(e)=>this.setState({fFrom:e.target.value,page:1}), onTo:(e)=>this.setState({fTo:e.target.value,page:1}),
+      onLot:(e)=>this.setState({fLot:e.target.value,page:1}), onClearFilters:()=>this.setState({fFrom:'',fTo:'',fLot:'',page:1}),
+      histSummary:`${rows.length} mẫu khớp bộ lọc · trang ${page}/${totalPages}`,
+      pageRows, pageLabel:`Trang ${page} / ${totalPages}`,
+      prevPage:()=>this.setState({page:Math.max(1,page-1)}), nextPage:()=>this.setState({page:Math.min(totalPages,page+1)}),
+      prevStyle:btn(page>1), nextStyle:btn(page<totalPages),
+      histNote:this.note([
+        'Dense rows với viền ngang mảnh, không bọc card từng dòng — tối ưu quét nhanh nhiều bản ghi audit.',
+        'Không có nút sửa/xoá ở bất kỳ đâu: dữ liệu append-only, backend cũng không có route PUT/PATCH/DELETE.',
+        'Nút "Xuất CSV" mang theo đúng bộ lọc đang chọn (khoảng ngày + mã lô). Mobile: bảng cuộn ngang trong khung riêng.',
+      ]),
+      ...this.detailVals(), ...this.streamVals(), ...this.statesVals(),
+    };
+  }
+
+  tileStyle(warn){ return `background:${warn?'var(--amber-bg)':'var(--surface-1)'};border-radius:var(--r-tile);padding:16px 18px;`; }
+
+  // ============ DETAIL ============
+  detailVals(){
+    const s=this.state; const sample=SAMPLES.find(x=>x.id===s.sampleId);
+    const mode = s.screen==='detail' ? s.stateView : 'normal';
+    const base={
+      detNormal: s.screen==='detail' && mode==='normal' && !!sample,
+      detNotfound: s.screen==='detail' && (mode==='notfound' || !sample),
+      detLoading: s.screen==='detail' && mode==='loading',
+      detError: s.screen==='detail' && mode==='error',
+      notFoundBlock:this.notFoundBlock(), detailLoadingEl:this.detailLoadingEl(),
+      detSample:{code:''}, detCount:0, detImgDim:'', detImage:null, detStatus:null, detLegend:[], detMeta:[],
+      detParticleRows:[], histEl:null, detLabelRows:[], rawJson:'', jsonOpen:false, toggleJson:()=>{}, jsonToggleLabel:'', detailNote:null,
+    };
+    if(!sample) return base;
+    const parts=this.particlesFor(sample);
+    const dist={}; parts.forEach(p=>dist[p.label]=(dist[p.label]||0)+1);
+    const total=parts.length;
+    const recv=sample.at.slice(0,17)+String(Math.min(59,+sample.at.slice(17,19)+2)).padStart(2,'0')+sample.at.slice(19);
+    const raw={ device_id:'aquascope-01', sample_code:sample.code, batch_lot:sample.lot, captured_at:sample.at,
+      px_per_mm:PXMM, image_width:IMGW, image_height:IMGH,
+      particles:parts.map(p=>({blob_index:p.blob_index,centroid_x:p.centroid_x,centroid_y:p.centroid_y,bbox_x:p.bbox_x,bbox_y:p.bbox_y,bbox_w:p.bbox_w,bbox_h:p.bbox_h,area_px:p.area_px,size_mm:p.size_mm,label:p.label,confidence:p.confidence})) };
+    return {...base,
+      detSample:{code:sample.code}, detCount:total, detImgDim:IMGW+'×'+IMGH+' px',
+      detImage:this.backlit(sample,parts,{boxes:true,big:true}), detStatus:this.statusChip(sample),
+      detLegend:LABELS.filter(l=>dist[l]).map(l=>({vi:VI[l],color:CVAR[l]})),
+      detMeta:[
+        {k:'Mã lô',v:sample.lot||'—',mono:'ui-monospace,Menlo,monospace'},
+        {k:'Thiết bị',v:'aquascope-01',mono:'ui-monospace,Menlo,monospace'},
+        {k:'Giờ chụp',v:this.fdt(sample.at),mono:'inherit'},
+        {k:'Giờ nhận',v:this.fdt(recv),mono:'inherit'},
+        {k:'Hiệu chuẩn',v:PXMM+' px/mm',mono:'inherit'},
+        {k:'Kích thước ảnh',v:IMGW+'×'+IMGH,mono:'inherit'},
+      ],
+      detParticleRows:parts.map((p,i)=>({color:CVAR[p.label],vi:VI[p.label],conf:(p.confidence*100).toFixed(0)+'%',
+        confColor:p.confidence<0.5?'var(--amber-text)':'var(--text)', size:p.size_mm+' mm', area:p.area_px+' px²',
+        centroid:p.centroid_x+', '+p.centroid_y,
+        rowStyle:'border-top:1px solid var(--border);cursor:default;background:'+(s.hover===i?'var(--surface-1)':'transparent'),
+        enter:()=>this.setState({hover:i}), leave:()=>this.setState({hover:null})})),
+      histEl:this.histogram(parts),
+      detLabelRows:LABELS.filter(l=>dist[l]).map(l=>({vi:VI[l],color:CVAR[l],count:dist[l],pct:Math.round(dist[l]/total*100)+'%'})),
+      rawJson:JSON.stringify(raw,null,2),
+      jsonOpen:s.jsonOpen, toggleJson:()=>this.setState({jsonOpen:!s.jsonOpen}), jsonToggleLabel:s.jsonOpen?'Thu gọn ▲':'Mở rộng ▼',
+      detailNote:this.note([
+        'Bố cục 2 cột: ảnh + overlay bbox cố định (sticky) khi cuộn để luôn tham chiếu được trong lúc đọc dữ liệu bên phải.',
+        'Bảng hạt và ảnh liên kết hai chiều: di chuột lên hàng hoặc lên hạt đều tô đậm bbox tương ứng.',
+        'Khối raw metadata JSON giữ bản ghi audit nguyên văn, mở rộng được. Mobile: ảnh lên trên, dữ liệu xuống dưới; bảng cuộn ngang trong khung riêng.',
+      ]),
+    };
+  }
+  notFoundBlock(){
+    return h('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',textAlign:'center',gap:13,padding:'60px 24px',
+      background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--r-card)'}},
+      h('div',{style:{fontSize:40,fontWeight:600,color:'var(--text-3)',letterSpacing:'-1px'}},'404'),
+      h('div',{style:{fontSize:15,fontWeight:600}},'Không tìm thấy mẫu'),
+      h('p',{style:{margin:0,fontSize:13,color:'var(--text-2)',maxWidth:360,lineHeight:1.55}},'Mã mẫu này không tồn tại hoặc đã bị nhập sai. Dữ liệu là append-only nên không có mẫu nào bị xoá — hãy kiểm tra lại trong lịch sử.'),
+      h('button',{style:{marginTop:4,padding:'8px 16px',fontSize:13,fontWeight:500,color:'var(--teal-text)',background:'var(--teal-bg)',border:'none',borderRadius:8,cursor:'pointer'},onClick:()=>this.go('history')},'Về lịch sử'));
+  }
+  detailLoadingEl(){
+    const bar=(w)=>h('div',{style:{height:12,width:w,borderRadius:4,margin:'10px 0',background:'linear-gradient(90deg,var(--surface-1) 25%,var(--surface-2) 37%,var(--surface-1) 63%)',backgroundSize:'420px 100%',animation:'shimmer 1.3s infinite'}});
+    const card=(kids)=>h('div',{style:{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--r-card)',padding:16}},kids);
+    return h('div',{style:{display:'grid',gridTemplateColumns:'1.35fr 1fr',gap:20,alignItems:'start'}},
+      card(h('div',{style:{aspectRatio:'4/3',borderRadius:8,background:'linear-gradient(90deg,var(--surface-1) 25%,var(--surface-2) 37%,var(--surface-1) 63%)',backgroundSize:'420px 100%',animation:'shimmer 1.3s infinite'}})),
+      h('div',{style:{display:'flex',flexDirection:'column',gap:16}}, card([bar('60%'),bar('90%'),bar('80%')]), card([bar('70%'),bar('95%'),bar('85%')])));
+  }
+
+  // ============ STREAM ============
+  streamVals(){
+    const s=this.state;
+    const play=this.ic(h('path',{d:'M5 3l14 9-14 9V3z',fill:'currentColor',stroke:'none'},null),null);
+    const pause=this.ic([h('rect',{key:1,x:6,y:5,width:4,height:14,fill:'currentColor',stroke:'none'}),h('rect',{key:2,x:14,y:5,width:4,height:14,fill:'currentColor',stroke:'none'})],null);
+    return {
+      icoWarnTri:this.ic([h('path',{key:1,d:'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z'}),h('path',{key:2,d:'M12 9v4M12 17h.01'})],null),
+      streamRef:this.streamRef, hudCount:s.hud.count, hudFps:s.hud.fps, hudDist:this.hudDistEl(s.hud.dist),
+      streamPaused:!s.streamOn,
+      toggleStream:()=>this.setState({streamOn:!s.streamOn}),
+      streamBtnLabel:s.streamOn?'Tạm dừng':'Bật stream', streamBtnIcon:s.streamOn?pause:play,
+      streamBtnStyle:'display:inline-flex;align-items:center;gap:8px;padding:8px 15px;font-size:13px;font-weight:500;border-radius:8px;cursor:pointer;border:none;color:#fff;background:'+(s.streamOn?'var(--gray)':'var(--teal)'),
+      toggleDet:()=>this.setState({showDet:!s.showDet}),
+      switchTrack:'display:inline-block;position:relative;width:38px;height:22px;border-radius:999px;flex:none;transition:background .18s;background:'+(s.showDet?'var(--teal)':'var(--surface-2)'),
+      switchKnob:'position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .18s;transform:translateX('+(s.showDet?'16px':'0px')+')',
+      speed:s.speed, speedLabel:s.speed.toFixed(1)+'×', onSpeed:(e)=>this.setState({speed:parseFloat(e.target.value)}),
+      streamNote:this.note([
+        'Thuần frontend (canvas + vanilla JS): mô phỏng dòng chảy backlit, không gọi backend, không ghi DB — bảo toàn nguyên tắc append-only.',
+        'Toggle "Hiện detection" cho phép cú "reveal" khi trình chiếu: bật stream thấy dòng chảy, gạt detection thì bbox màu theo loại hiện đè lên.',
+        'Dùng đúng bảng màu nhãn và hệ số 14 px/mm như mock_sender để stream và ảnh tĩnh trông cùng một hệ. Điểm mở rộng: thay nền canvas bằng MJPEG thật của ESP32.',
+      ]),
+    };
+  }
+  hudDistEl(dist){
+    const present=LABELS.filter(l=>dist[l]);
+    if(!present.length) return h('span',{style:{fontSize:11.5,color:'var(--text-3)'}},'Chưa có hạt trong khung');
+    return h('div',{style:{display:'flex',gap:11,flexWrap:'wrap'}}, present.map(l=>
+      h('span',{key:l,style:{display:'inline-flex',alignItems:'center',gap:5,fontSize:11.5,color:'var(--text-2)'}},
+        h('span',{style:{width:9,height:9,borderRadius:2,background:CVAR[l]}}), VI[l]+' '+dist[l])));
+  }
+
+  // ============ STATES GALLERY ============
+  statesVals(){
+    return {galleryCards:[
+      {title:'Dashboard — trống', sub:'Chưa có mẫu nào được nạp', preview:this.emptyBlock('Chưa có mẫu nào','Chạy mock_sender.py để nạp dữ liệu demo, hoặc bật trạm để bắt đầu ghi mẫu.')},
+      {title:'History — không kết quả', sub:'Bộ lọc không khớp mẫu nào', preview:this.emptyBlock('Không có kết quả','Không có mẫu khớp bộ lọc hiện tại. Thử nới rộng khoảng ngày hoặc bỏ chọn mã lô.')},
+      {title:'Đang tải', sub:'Skeleton khi chờ dữ liệu / ảnh', preview:this.loadingTable()},
+      {title:'Lỗi tải dữ liệu', sub:'Thông báo ngắn, không lộ exception', preview:this.errorBlock()},
+      {title:'Không tìm thấy (404)', sub:'Mở một mã mẫu không tồn tại', preview:this.notFoundBlock()},
+    ]};
+  }
+
+  loadingTable(){
+    const bar=(w)=>h('div',{style:{height:12,width:w,borderRadius:4,background:'linear-gradient(90deg,var(--surface-1) 25%,var(--surface-2) 37%,var(--surface-1) 63%)',backgroundSize:'420px 100%',animation:'shimmer 1.3s infinite'}});
+    return h('div',{style:{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--r-card)',overflow:'hidden'}},
+      [0,1,2,3,4,5,6].map(i=>h('div',{key:i,style:{display:'flex',gap:20,alignItems:'center',padding:'15px 18px',borderTop:i?'1px solid var(--border)':'none'}},
+        bar('120px'),bar('90px'),bar('70px'),h('div',{style:{flex:1}}),bar('54px'))));
+  }
+  errorBlock(){
+    return h('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',textAlign:'center',gap:12,padding:'56px 24px',
+      background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--r-card)'}},
+      h('div',{style:{width:52,height:52,borderRadius:'50%',background:'var(--amber-bg)',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--amber-text)'}},
+        this.ic([h('path',{key:1,d:'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z'}),h('path',{key:2,d:'M12 9v4M12 17h.01'})],null)),
+      h('div',{style:{fontSize:14.5,fontWeight:600}},'Không tải được dữ liệu'),
+      h('p',{style:{margin:0,fontSize:13,color:'var(--text-2)'}},'Kiểm tra kết nối tới trạm rồi thử lại.'),
+      h('button',{style:{marginTop:4,padding:'8px 16px',fontSize:13,fontWeight:500,color:'#fff',background:'var(--teal)',border:'none',borderRadius:8,cursor:'pointer'},onClick:()=>this.setState({stateView:'normal'})},'Thử lại'));
+  }
+  brandMark(){
+    return h('svg',{width:34,height:34,viewBox:'0 0 34 34'},
+      h('rect',{x:0,y:0,width:34,height:34,rx:9,fill:'var(--teal)'}),
+      h('circle',{cx:17,cy:17,r:9.5,fill:'none',stroke:'#fff',strokeOpacity:0.55,strokeWidth:1.6}),
+      h('circle',{cx:14.5,cy:15,r:3.1,fill:'#0F3D2E'}),
+      h('circle',{cx:20.5,cy:20,r:1.8,fill:'#0F3D2E',fillOpacity:0.8}));
+  }
+}
+</script>
+</body>
+</html>
