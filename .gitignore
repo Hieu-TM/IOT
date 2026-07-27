@@ -24,3 +24,9 @@ dataset_collector/firmware/myconfig.h
 
 # Môi trường ảo + dấu "đã cài deps" do start.bat tạo
 .venv/
+
+# Tệp tài liệu office & tệp tạm
+*.pptx
+*.docx
+~$*
+
